@@ -56,45 +56,71 @@ export class PaymentService {
     return gatewayOrderId;
   }
 
-  // ✅ ИСПРАВЛЕНО: Теперь принимает paymentId вместо orderId
-  private generateGatewayUrls(gatewayName: string, paymentId: string, baseUrl: string, successUrl?: string, failUrl?: string): {
+  // ✅ ОБНОВЛЕНО: Updated generateGatewayUrls with three URL types and gatewayOrderId parameter
+  private generateGatewayUrls(
+    gatewayName: string, 
+    paymentId: string, 
+    gatewayOrderId: string, // ✅ НОВОЕ: Добавлен gatewayOrderId
+    baseUrl: string, 
+    successUrl?: string, 
+    failUrl?: string,
+    pendingUrl?: string // ✅ НОВОЕ: Добавлен pendingUrl
+  ): {
     finalSuccessUrl: string;
     finalFailUrl: string;
+    finalPendingUrl: string; // ✅ НОВОЕ
     dbSuccessUrl: string;
     dbFailUrl: string;
+    dbPendingUrl: string; // ✅ НОВОЕ
   } {
-    if (successUrl && failUrl) {
+    // ✅ НОВОЕ: Если все URL переданы мерчантом, используем их
+    if (successUrl && failUrl && pendingUrl) {
       return {
         finalSuccessUrl: successUrl,
         finalFailUrl: failUrl,
+        finalPendingUrl: pendingUrl,
         dbSuccessUrl: successUrl,
         dbFailUrl: failUrl,
+        dbPendingUrl: pendingUrl,
       };
     }
 
+    // ✅ ОБНОВЛЕНО: Генерируем URL с payment_id параметром
+    const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
+
     let finalSuccessUrl: string;
     let finalFailUrl: string;
-    let dbSuccessUrl: string;
-    let dbFailUrl: string;
+    let finalPendingUrl: string;
 
+    // ✅ ОБНОВЛЕНО: Для KLYME, CoinToPay и Noda используем pending URL как success URL
     if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
-      dbSuccessUrl = `https://app.trapay.uk/payment/pending?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     } else {
       finalSuccessUrl = `${baseUrl}/gateway/success.php?id=${paymentId}`;
-      dbSuccessUrl = `https://app.trapay.uk/payment/success?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     }
 
     finalFailUrl = `${baseUrl}/gateway/fail.php?id=${paymentId}`;
-    dbFailUrl = `https://app.trapay.uk/payment/fail?id=${paymentId}`;
 
     console.log(`🔗 Generated URLs for ${gatewayName} with payment ID ${paymentId}:`);
     console.log(`   🌐 Gateway Success URL: ${finalSuccessUrl}`);
     console.log(`   🌐 Gateway Fail URL: ${finalFailUrl}`);
+    console.log(`   🌐 Gateway Pending URL: ${finalPendingUrl}`);
     console.log(`   💾 DB Success URL: ${dbSuccessUrl}`);
     console.log(`   💾 DB Fail URL: ${dbFailUrl}`);
+    console.log(`   💾 DB Pending URL: ${dbPendingUrl}`);
 
-    return { finalSuccessUrl, finalFailUrl, dbSuccessUrl, dbFailUrl };
+    return { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl 
+    };
   }
 
   private validateKlymeCurrency(gatewayName: string, currency: string): void {
@@ -213,6 +239,7 @@ export class PaymentService {
       expires_at,
       success_url,
       fail_url,
+      pending_url, // ✅ НОВОЕ: Добавлен pending_url
       customer_email,
       customer_name,
       country,
@@ -275,6 +302,7 @@ export class PaymentService {
         // ✅ ВРЕМЕННО: Устанавливаем временные URL, обновим их после генерации
         successUrl: 'temp',
         failUrl: 'temp',
+        pendingUrl: 'temp', // ✅ НОВОЕ: Временный pending URL
         status: 'PENDING',
         orderId: merchantOrderId,
         gatewayOrderId: gatewayOrderId,
@@ -293,27 +321,38 @@ export class PaymentService {
     console.log(`   - Merchant order_id: ${merchantOrderId || 'none'}`);
     console.log(`   - Gateway order_id: ${gatewayOrderId} (8digits-8digits)`);
 
-    // ✅ ИСПРАВЛЕНО: Теперь генерируем URL с реальным ID платежа
+    // ✅ ОБНОВЛЕНО: Теперь генерируем URL с реальным ID платежа и gatewayOrderId
     const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
-    const { finalSuccessUrl, finalFailUrl, dbSuccessUrl, dbFailUrl } = this.generateGatewayUrls(
+    const { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl 
+    } = this.generateGatewayUrls(
       gatewayName, 
-      payment.id, // ✅ Используем ID платежа
+      payment.id, 
+      gatewayOrderId, // ✅ НОВОЕ: Передаем gatewayOrderId
       baseUrl, 
       success_url, 
-      fail_url
+      fail_url,
+      pending_url // ✅ НОВОЕ: Передаем pending_url
     );
 
-    // ✅ ИСПРАВЛЕНО: Обновляем платеж с правильными URL
+    // ✅ ОБНОВЛЕНО: Обновляем платеж с правильными URL (включая pending)
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
         successUrl: dbSuccessUrl,
         failUrl: dbFailUrl,
+        pendingUrl: dbPendingUrl, // ✅ НОВОЕ: Сохраняем pending URL
       },
     });
 
     console.log(`   - DB Success URL: ${dbSuccessUrl}`);
     console.log(`   - DB Fail URL: ${dbFailUrl}`);
+    console.log(`   - DB Pending URL: ${dbPendingUrl}`);
 
     let gatewayPaymentId: string | undefined;
     let externalPaymentUrl: string | undefined;
@@ -425,7 +464,7 @@ export class PaymentService {
           amount,
           currency: currency || 'USD',
           webhookUrl: `https://tesoft.uk/gateways/noda/webhook`,
-          returnUrl: finalSuccessUrl,
+          returnUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для Noda
           expiryDate: expires_at,
         });
 
@@ -505,7 +544,7 @@ export class PaymentService {
           amount,
           currency: currency || 'USD',
           region,
-          redirectUrl: finalSuccessUrl,
+          redirectUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для KLYME
         });
 
         gatewayPaymentId = klymeResult.gateway_payment_id;
@@ -544,7 +583,7 @@ export class PaymentService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Added failure_message to payment status response
+  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to payment status response
   async getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse | null> {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -558,6 +597,7 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
+        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
         customerEmail: true,
         customerName: true,
         invoiceTotalSum: true,
@@ -608,6 +648,7 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
+      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
       customer_email: payment.customerEmail,
       customer_name: payment.customerName,
       invoice_total_sum: payment.invoiceTotalSum,
@@ -633,7 +674,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with failure_message
+  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with pending_url and failure_message
   async getPaymentById(id: string): Promise<PaymentStatusResponse | null> {
     console.log(`🔍 Searching for payment with ID: ${id}`);
     console.log(`🔍 Will search by: internal ID, merchant order ID, gateway order ID, and gateway payment ID`);
@@ -657,6 +698,7 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
+        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
         customerEmail: true,
         customerName: true,
         invoiceTotalSum: true,
@@ -727,6 +769,7 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
+      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
       customer_email: payment.customerEmail,
       customer_name: payment.customerName,
       invoice_total_sum: payment.invoiceTotalSum,
@@ -747,7 +790,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added failure_message to shop payments list
+  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to shop payments list
   async getPaymentsByShop(shopId: string, filters: PaymentFilters): Promise<{
     payments: any[];
     pagination: {
@@ -794,6 +837,7 @@ export class PaymentService {
           externalPaymentUrl: true,
           successUrl: true,
           failUrl: true,
+          pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
           expiresAt: true,
           orderId: true,
           gatewayOrderId: true,
@@ -843,6 +887,7 @@ export class PaymentService {
           external_payment_url: payment.externalPaymentUrl,
           success_url: payment.successUrl,
           fail_url: payment.failUrl,
+          pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
           expires_at: payment.expiresAt,
           order_id: payment.orderId,
           gateway_order_id: payment.gatewayOrderId,
@@ -875,7 +920,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added failure_message to shop payment by ID
+  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to shop payment by ID
   async getPaymentByShopAndId(shopId: string, paymentId: string): Promise<any | null> {
     const payment = await prisma.payment.findFirst({
       where: {
@@ -893,6 +938,7 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
+        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
         expiresAt: true,
         orderId: true,
         gatewayOrderId: true,
@@ -941,6 +987,7 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
+      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
       expires_at: payment.expiresAt,
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,

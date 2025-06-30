@@ -91,7 +91,8 @@ export class NodaService {
 
     // Use tesoft.uk URLs
     const finalWebhookUrl = `https://tesoft.uk/gateway/noda/webhook/`;
-    const finalReturnUrl = `https://tesoft.uk/gateway/success.php?id=${orderId}`;
+    // ✅ ОБНОВЛЕНО: Используем pending.php для Noda return URL
+    const finalReturnUrl = returnUrl || `https://tesoft.uk/gateway/pending.php?id=${orderId}`;
 
     // Prepare request body for Noda Payment Link - ПРЯМОЙ JSON БЕЗ ОБЕРТКИ
     const requestBody: any = {
@@ -115,6 +116,7 @@ export class NodaService {
       console.log('URL:', this.apiUrl);
       console.log('Request Body (Direct JSON):', JSON.stringify(requestBody, null, 2));
       console.log('Order ID Format:', orderId, '(8digits-8digits format for Noda)');
+      console.log('✅ ОБНОВЛЕНО: Return URL uses pending.php:', finalReturnUrl);
 
       // Log request to white domain
       loggerService.logWhiteDomainRequest('noda', '/payment-links', 'POST', requestBody);
@@ -206,6 +208,7 @@ export class NodaService {
       console.log('Short Link:', result.shortLinkUrls.shortLink);
       console.log('QR Code Link:', result.shortLinkUrls.qrCodeLink || 'Not provided');
       console.log('Order ID Used:', orderId, '(8digits-8digits format)');
+      console.log('✅ Return URL configured for pending:', finalReturnUrl);
 
       return {
         gateway_payment_id: result.id,

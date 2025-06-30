@@ -41,45 +41,71 @@ export class PaymentLinkService {
     return `${generateSegment()}-${generateSegment()}`;
   }
 
-  // ✅ ИСПРАВЛЕНО: Теперь принимает paymentId вместо orderId
-  private generateGatewayUrls(gatewayName: string, paymentId: string, baseUrl: string, successUrl?: string, failUrl?: string): {
+  // ✅ ОБНОВЛЕНО: Updated generateGatewayUrls with three URL types and gatewayOrderId parameter
+  private generateGatewayUrls(
+    gatewayName: string, 
+    paymentId: string, 
+    gatewayOrderId: string, // ✅ НОВОЕ: Добавлен gatewayOrderId
+    baseUrl: string, 
+    successUrl?: string, 
+    failUrl?: string,
+    pendingUrl?: string // ✅ НОВОЕ: Добавлен pendingUrl
+  ): {
     finalSuccessUrl: string;
     finalFailUrl: string;
+    finalPendingUrl: string; // ✅ НОВОЕ
     dbSuccessUrl: string;
     dbFailUrl: string;
+    dbPendingUrl: string; // ✅ НОВОЕ
   } {
-    if (successUrl && failUrl) {
+    // ✅ НОВОЕ: Если все URL переданы мерчантом, используем их
+    if (successUrl && failUrl && pendingUrl) {
       return {
         finalSuccessUrl: successUrl,
         finalFailUrl: failUrl,
+        finalPendingUrl: pendingUrl,
         dbSuccessUrl: successUrl,
         dbFailUrl: failUrl,
+        dbPendingUrl: pendingUrl,
       };
     }
 
+    // ✅ ОБНОВЛЕНО: Генерируем URL с payment_id параметром
+    const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
+
     let finalSuccessUrl: string;
     let finalFailUrl: string;
-    let dbSuccessUrl: string;
-    let dbFailUrl: string;
+    let finalPendingUrl: string;
 
+    // ✅ ОБНОВЛЕНО: Для KLYME, CoinToPay и Noda используем pending URL как success URL
     if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
-      dbSuccessUrl = `https://app.trapay.uk/payment/pending?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     } else {
       finalSuccessUrl = `${baseUrl}/gateway/success.php?id=${paymentId}`;
-      dbSuccessUrl = `https://app.trapay.uk/payment/success?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     }
 
     finalFailUrl = `${baseUrl}/gateway/fail.php?id=${paymentId}`;
-    dbFailUrl = `https://app.trapay.uk/payment/fail?id=${paymentId}`;
 
     console.log(`🔗 Generated URLs for ${gatewayName} with payment ID ${paymentId}:`);
     console.log(`   🌐 Gateway Success URL: ${finalSuccessUrl}`);
     console.log(`   🌐 Gateway Fail URL: ${finalFailUrl}`);
+    console.log(`   🌐 Gateway Pending URL: ${finalPendingUrl}`);
     console.log(`   💾 DB Success URL: ${dbSuccessUrl}`);
     console.log(`   💾 DB Fail URL: ${dbFailUrl}`);
+    console.log(`   💾 DB Pending URL: ${dbPendingUrl}`);
 
-    return { finalSuccessUrl, finalFailUrl, dbSuccessUrl, dbFailUrl };
+    return { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl 
+    };
   }
 
   private validateKlymeCurrency(gatewayName: string, currency: string): void {
@@ -223,7 +249,7 @@ export class PaymentLinkService {
 
     this.validateKlymeCurrency(gatewayName, finalCurrency);
 
-    // ✅ ИСПРАВЛЕНО: Создаем payment link с временными URL, которые будут обновлены при создании платежа
+    // ✅ ОБНОВЛЕНО: Создаем payment link с тремя типами URL
     const paymentLink = await prisma.paymentLink.create({
       data: {
         shopId,
@@ -235,9 +261,10 @@ export class PaymentLinkService {
         currentPayments: 0,
         status: 'ACTIVE',
         expiresAt: linkData.expiresAt ? new Date(linkData.expiresAt) : undefined,
-        // ✅ ИСПРАВЛЕНО: Сохраняем пользовательские URL или null (будут заполнены при создании платежа)
+        // ✅ ОБНОВЛЕНО: Сохраняем все три типа URL
         successUrl: linkData.successUrl || null,
         failUrl: linkData.failUrl || null,
+        pendingUrl: linkData.pendingUrl || null, // ✅ НОВОЕ: Сохраняем pending URL
         country: rapydCountry,
         language: linkData.language || 'EN',
       },
@@ -254,7 +281,7 @@ export class PaymentLinkService {
     console.log(`✅ Payment link created: ${paymentLink.id} (${gatewayName})`);
     console.log(`💰 Fixed amount: ${paymentLink.amount} ${paymentLink.currency}`);
     console.log(`🔗 Link URL: https://app.trapay.uk/link/${paymentLink.id}`);
-    console.log(`📝 Note: Success/Fail URLs will be generated when payment is created`);
+    console.log(`📝 Note: Success/Fail/Pending URLs will be generated when payment is created`);
 
     return this.formatPaymentLinkResponse(paymentLink);
   }
@@ -558,6 +585,7 @@ export class PaymentLinkService {
         // ✅ ВРЕМЕННО: Устанавливаем временные URL, обновим их после генерации
         successUrl: 'temp',
         failUrl: 'temp',
+        pendingUrl: 'temp', // ✅ НОВОЕ: Временный pending URL
         status: 'PENDING',
         orderId: null,
         gatewayOrderId: gatewayOrderId,
@@ -572,22 +600,32 @@ export class PaymentLinkService {
 
     console.log(`💾 Payment created: ${payment.id}`);
 
-    // ✅ ИСПРАВЛЕНО: Теперь генерируем URL с реальным ID платежа
+    // ✅ ОБНОВЛЕНО: Теперь генерируем URL с реальным ID платежа и gatewayOrderId
     const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
-    const { finalSuccessUrl, finalFailUrl, dbSuccessUrl, dbFailUrl } = this.generateGatewayUrls(
+    const { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl 
+    } = this.generateGatewayUrls(
       link.gateway, 
-      payment.id, // ✅ Используем ID платежа, а не ссылки
+      payment.id, 
+      gatewayOrderId, // ✅ НОВОЕ: Передаем gatewayOrderId
       baseUrl, 
       link.successUrl || undefined, 
-      link.failUrl || undefined
+      link.failUrl || undefined,
+      link.pendingUrl || undefined // ✅ НОВОЕ: Передаем pending URL из ссылки
     );
 
-    // ✅ ИСПРАВЛЕНО: Обновляем платеж с правильными URL
+    // ✅ ОБНОВЛЕНО: Обновляем платеж с правильными URL (включая pending)
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
         successUrl: dbSuccessUrl,
         failUrl: dbFailUrl,
+        pendingUrl: dbPendingUrl, // ✅ НОВОЕ: Сохраняем pending URL
       },
     });
 
@@ -595,6 +633,7 @@ export class PaymentLinkService {
     console.log(`👤 Customer: ${customerName || 'Anonymous'} (${customerEmail || 'no email'})`);
     console.log(`💾 DB Success URL: ${dbSuccessUrl}`);
     console.log(`💾 DB Fail URL: ${dbFailUrl}`);
+    console.log(`💾 DB Pending URL: ${dbPendingUrl}`);
 
     let gatewayPaymentId: string | undefined;
     let externalPaymentUrl: string | undefined;
@@ -688,7 +727,7 @@ export class PaymentLinkService {
           amount: paymentAmount,
           currency: link.currency,
           webhookUrl: `https://tesoft.uk/gateways/noda/webhook`,
-          returnUrl: finalSuccessUrl,
+          returnUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для Noda
           expiryDate: link.expiresAt?.toISOString(),
         });
 
@@ -765,7 +804,7 @@ export class PaymentLinkService {
           amount: paymentAmount,
           currency: link.currency,
           region,
-          redirectUrl: finalSuccessUrl,
+          redirectUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для KLYME
         });
 
         gatewayPaymentId = klymeResult.gateway_payment_id;
@@ -958,8 +997,10 @@ export class PaymentLinkService {
       currentPayments: link.currentPayments,
       status: link.status,
       expiresAt: link.expiresAt || undefined,
+      // ✅ ОБНОВЛЕНО: Возвращаем все три типа URL
       successUrl: link.successUrl || undefined,
       failUrl: link.failUrl || undefined,
+      pendingUrl: link.pendingUrl || undefined, // ✅ НОВОЕ: Возвращаем pending URL
       country: link.country || undefined,
       language: link.language || undefined,
       linkUrl: `https://app.trapay.uk/link/${link.id}`,

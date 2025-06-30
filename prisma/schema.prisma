@@ -85,8 +85,10 @@ model PaymentLink {
   currentPayments Int               @default(0) @map("current_payments")
   status          PaymentLinkStatus @default(ACTIVE)
   expiresAt       DateTime?         @map("expires_at")
+  // ✅ НОВОЕ: Три типа URL для payment links
   successUrl      String?           @map("success_url") @db.Text
   failUrl         String?           @map("fail_url") @db.Text
+  pendingUrl      String?           @map("pending_url") @db.Text // ✅ НОВОЕ: URL для ожидания
   // Rapyd specific fields
   country         String?
   language        String?           @default("EN")
@@ -150,8 +152,10 @@ model Payment {
   sourceCurrency      String?       @map("source_currency") // New field
   usage               PaymentUsage  @default(ONCE)
   expiresAt           DateTime?     @map("expires_at")
+  // ✅ НОВОЕ: Три типа URL для payments
   successUrl          String        @map("success_url") @db.Text
   failUrl             String        @map("fail_url") @db.Text
+  pendingUrl          String?       @map("pending_url") @db.Text // ✅ НОВОЕ: URL для ожидания
   status              PaymentStatus @default(PENDING)
   externalPaymentUrl  String?       @map("external_payment_url") @db.Text
   gatewayPaymentId    String?       @map("gateway_payment_id")

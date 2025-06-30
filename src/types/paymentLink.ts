@@ -5,9 +5,10 @@ export interface CreatePaymentLinkRequest {
   gateway: string; // Gateway ID (0001, 0010, 1000)
   maxPayments?: number;
   expiresAt?: string; // ISO date string
-  // ✅ successUrl и failUrl опциональные - по умолчанию tesoft.uk/success и tesoft.uk/fail
+  // ✅ НОВОЕ: Три типа URL для payment links
   successUrl?: string;
   failUrl?: string;
+  pendingUrl?: string; // ✅ НОВОЕ: URL для ожидания
   // Rapyd specific fields
   country?: string;
   language?: string;
@@ -28,8 +29,10 @@ export interface PaymentLinkResponse {
   currentPayments: number;
   status: string;
   expiresAt?: Date;
+  // ✅ НОВОЕ: Три типа URL
   successUrl?: string;
   failUrl?: string;
+  pendingUrl?: string; // ✅ НОВОЕ: URL для ожидания
   // Rapyd specific fields
   country?: string;
   language?: string;

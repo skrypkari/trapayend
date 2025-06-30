@@ -28,6 +28,8 @@ export interface CreatePublicPaymentRequest {
   expires_at?: string; // ISO string
   success_url?: string;
   fail_url?: string;
+  // ✅ НОВОЕ: Добавлен pending_url
+  pending_url?: string;
   customer_email?: string;
   customer_name?: string;
   // New Rapyd fields
@@ -106,6 +108,8 @@ export interface PaymentStatusResponse {
   external_payment_url?: string | null; // ✅ ДОБАВЛЕНО: Original gateway URL
   success_url: string;
   fail_url: string;
+  // ✅ НОВОЕ: Добавлен pending_url
+  pending_url?: string | null;
   customer_email?: string | null;
   customer_name?: string | null;
   invoice_total_sum?: number | null;
