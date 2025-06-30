@@ -183,6 +183,8 @@ model Payment {
   adminNotes          String?       @map("admin_notes") @db.Text // Заметки админа при изменении статуса
   statusChangedBy     String?       @map("status_changed_by") // Кто изменил статус (admin/system)
   statusChangedAt     DateTime?     @map("status_changed_at") // Когда изменен статус
+  // ✅ НОВОЕ: Поле для сообщения об ошибке от шлюза
+  failureMessage      String?       @map("failure_message") @db.Text // Сообщение об ошибке от шлюза (Rapyd failure_message, etc.)
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 

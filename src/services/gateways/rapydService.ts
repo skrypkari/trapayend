@@ -279,17 +279,31 @@ export class RapydService {
     }
   }
 
-  // Method for processing webhook from Rapyd with updated status mapping
+  // ✅ ОБНОВЛЕНО: Method for processing webhook from Rapyd with failure_message extraction
   async processWebhook(webhookData: any): Promise<{
     paymentId: string;
     status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
     amount?: number;
     currency?: string;
+    failureMessage?: string; // ✅ НОВОЕ: Добавлено поле для сообщения об ошибке
+    additionalInfo?: {
+      cardLast4?: string;
+      paymentMethod?: string;
+      errorCode?: string;
+      failureCode?: string;
+    };
   }> {
     console.log('Processing Rapyd webhook:', webhookData);
     
     // Map Rapyd webhook status to our status based on examples
     let status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' = 'PENDING';
+    let failureMessage: string | undefined;
+    
+    // ✅ НОВОЕ: Извлекаем failure_message из webhook данных
+    if (webhookData.data?.failure_message) {
+      failureMessage = webhookData.data.failure_message;
+      console.log(`💥 Rapyd failure message: ${failureMessage}`);
+    }
     
     // First check event type
     switch (webhookData.type?.toUpperCase()) {
@@ -312,6 +326,10 @@ export class RapydService {
       
       case 'PAYMENT_FAILED':
         status = 'FAILED';
+        // ✅ НОВОЕ: Для failed платежей обязательно извлекаем failure_message
+        if (!failureMessage && webhookData.data?.failure_message) {
+          failureMessage = webhookData.data.failure_message;
+        }
         break;
       
       default:
@@ -332,6 +350,10 @@ export class RapydService {
             break;
           case 'ERR': // Error
             status = 'FAILED';
+            // ✅ НОВОЕ: Для ERR статуса тоже извлекаем failure_message
+            if (!failureMessage && webhookData.data?.failure_message) {
+              failureMessage = webhookData.data.failure_message;
+            }
             break;
           case 'NEW':
           case 'ACT': // Active
@@ -342,11 +364,34 @@ export class RapydService {
         break;
     }
     
+    // ✅ НОВОЕ: Извлекаем дополнительную информацию для сохранения
+    const additionalInfo: any = {};
+    
+    if (webhookData.data?.payment_method_data?.last4) {
+      additionalInfo.cardLast4 = webhookData.data.payment_method_data.last4;
+    }
+    
+    if (webhookData.data?.payment_method_type) {
+      additionalInfo.paymentMethod = webhookData.data.payment_method_type;
+    }
+    
+    if (webhookData.data?.error_code) {
+      additionalInfo.errorCode = webhookData.data.error_code;
+    }
+    
+    if (webhookData.data?.failure_code) {
+      additionalInfo.failureCode = webhookData.data.failure_code;
+    }
+    
+    console.log(`🔄 Rapyd webhook processed: status=${status}, failureMessage=${failureMessage || 'none'}`);
+    
     return {
       paymentId: webhookData.data?.merchant_reference_id || '',
       status,
       amount: webhookData.data?.amount,
       currency: webhookData.data?.currency,
+      failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
+      additionalInfo,
     };
   }
 }

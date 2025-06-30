@@ -544,6 +544,7 @@ export class PaymentService {
     }
   }
 
+  // ✅ ОБНОВЛЕНО: Added failure_message to payment status response
   async getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse | null> {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -574,6 +575,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
+        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
         createdAt: true,
         updatedAt: true,
         expiresAt: true,
@@ -624,13 +626,14 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
+      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
       expires_at: payment.expiresAt,
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs
+  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with failure_message
   async getPaymentById(id: string): Promise<PaymentStatusResponse | null> {
     console.log(`🔍 Searching for payment with ID: ${id}`);
     console.log(`🔍 Will search by: internal ID, merchant order ID, gateway order ID, and gateway payment ID`);
@@ -672,6 +675,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
+        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
         createdAt: true,
         updatedAt: true,
         expiresAt: true,
@@ -699,6 +703,10 @@ export class PaymentService {
     console.log(`   - Gateway payment ID: ${payment.gatewayPaymentId || 'none'}`);
     console.log(`   - Gateway: ${payment.gateway}`);
     console.log(`   - Status: ${payment.status}`);
+    
+    if (payment.failureMessage) {
+      console.log(`   - Failure Message: ${payment.failureMessage}`);
+    }
 
     let paymentUrl: string;
     
@@ -732,12 +740,14 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
+      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
       expires_at: payment.expiresAt,
     };
   }
 
+  // ✅ ОБНОВЛЕНО: Added failure_message to shop payments list
   async getPaymentsByShop(shopId: string, filters: PaymentFilters): Promise<{
     payments: any[];
     pagination: {
@@ -802,6 +812,7 @@ export class PaymentService {
           bankId: true,
           remitterIban: true,
           remitterName: true,
+          failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
           createdAt: true,
           updatedAt: true,
         },
@@ -850,6 +861,7 @@ export class PaymentService {
           bank_id: payment.bankId,
           remitter_iban: payment.remitterIban,
           remitter_name: payment.remitterName,
+          failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
           created_at: payment.createdAt,
           updated_at: payment.updatedAt,
         };
@@ -863,6 +875,7 @@ export class PaymentService {
     };
   }
 
+  // ✅ ОБНОВЛЕНО: Added failure_message to shop payment by ID
   async getPaymentByShopAndId(shopId: string, paymentId: string): Promise<any | null> {
     const payment = await prisma.payment.findFirst({
       where: {
@@ -899,6 +912,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
+        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
         createdAt: true,
         updatedAt: true,
       },
@@ -946,6 +960,7 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
+      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
     };

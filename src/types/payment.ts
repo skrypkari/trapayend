@@ -84,6 +84,8 @@ export interface PaymentResponse {
   bankId?: string | null;
   remitterIban?: string | null;
   remitterName?: string | null;
+  // ✅ НОВОЕ: Поле для сообщения об ошибке
+  failureMessage?: string | null;
   createdAt: Date;
   updatedAt: Date;
   shop?: {
@@ -124,6 +126,8 @@ export interface PaymentStatusResponse {
   bank_id?: string | null;
   remitter_iban?: string | null;
   remitter_name?: string | null;
+  // ✅ НОВОЕ: Поле для сообщения об ошибке
+  failure_message?: string | null;
   created_at: Date;
   updated_at: Date;
   expires_at?: Date | null;
