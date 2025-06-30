@@ -275,11 +275,13 @@ export class PlisioService {
     }
   }
 
+  // ✅ ОБНОВЛЕНО: Updated processWebhook method with tx_urls extraction
   async processWebhook(webhookData: any): Promise<{
     paymentId: string;
     status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
     amount?: number;
     currency?: string;
+    txUrls?: string[]; // ✅ НОВОЕ: Добавлено поле для transaction URLs
   }> {
     console.log('Processing Plisio webhook:', webhookData);
     
@@ -304,11 +306,56 @@ export class PlisioService {
         break;
     }
     
+    // ✅ НОВОЕ: Извлекаем и форматируем tx_urls
+    let txUrls: string[] | undefined;
+    
+    if (webhookData.tx_urls) {
+      try {
+        console.log('🔗 Raw tx_urls from Plisio:', webhookData.tx_urls);
+        
+        // Парсим JSON строку
+        let parsedUrls: string[];
+        if (typeof webhookData.tx_urls === 'string') {
+          parsedUrls = JSON.parse(webhookData.tx_urls);
+        } else if (Array.isArray(webhookData.tx_urls)) {
+          parsedUrls = webhookData.tx_urls;
+        } else {
+          parsedUrls = [];
+        }
+        
+        // ✅ ИСПРАВЛЯЕМ: Убираем экранирование из URL
+        txUrls = parsedUrls.map(url => {
+          // Убираем экранирование слешей
+          const cleanUrl = url.replace(/\\/g, '');
+          console.log(`🔗 Formatted URL: ${url} -> ${cleanUrl}`);
+          return cleanUrl;
+        });
+        
+        console.log('✅ Processed tx_urls:', txUrls);
+        
+        // ✅ ПРОВЕРЯЕМ: Валидность URL
+        txUrls.forEach((url, index) => {
+          try {
+            new URL(url);
+            console.log(`✅ URL ${index + 1} is valid: ${url}`);
+          } catch (error) {
+            console.error(`❌ URL ${index + 1} is invalid: ${url}`, error);
+          }
+        });
+        
+      } catch (error) {
+        console.error('❌ Failed to parse tx_urls:', error);
+        console.error('Raw tx_urls data:', webhookData.tx_urls);
+        txUrls = undefined;
+      }
+    }
+    
     return {
       paymentId: webhookData.order_number || '',
       status,
       amount: webhookData.amount,
       currency: webhookData.currency,
+      txUrls, // ✅ НОВОЕ: Возвращаем обработанные transaction URLs
     };
   }
 }

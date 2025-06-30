@@ -88,6 +88,8 @@ export interface PaymentResponse {
   remitterName?: string | null;
   // ✅ НОВОЕ: Поле для сообщения об ошибке
   failureMessage?: string | null;
+  // ✅ НОВОЕ: Поле для transaction URLs
+  txUrls?: string[] | null;
   createdAt: Date;
   updatedAt: Date;
   shop?: {
@@ -115,6 +117,8 @@ export interface PaymentStatusResponse {
   invoice_total_sum?: number | null;
   qr_code?: string | null;
   qr_url?: string | null;
+  // ✅ НОВОЕ: Поле для transaction URLs
+  tx_urls?: string[] | null;
   order_id?: string | null; // Merchant's order ID
   gateway_order_id?: string | null; // Gateway order ID (8digits-8digits)
   merchant_brand?: string; // Add merchant brand field

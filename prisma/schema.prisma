@@ -167,6 +167,8 @@ model Payment {
   invoiceTotalSum     Float?        @map("invoice_total_sum")
   qrCode              String?       @map("qr_code") @db.Text
   qrUrl               String?       @map("qr_url") @db.Text
+  // ✅ НОВОЕ: Поле для transaction URLs от Plisio
+  txUrls              String?       @map("tx_urls") @db.Text // JSON array of transaction URLs
   // New Rapyd fields
   country             String?       @map("country")
   language            String?       @map("language")

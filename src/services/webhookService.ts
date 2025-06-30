@@ -25,6 +25,7 @@ export class WebhookService {
     this.paymentLinkService = new PaymentLinkService();
   }
 
+  // ✅ ОБНОВЛЕНО: Plisio webhook processing with tx_urls support
   async processPlisioWebhook(webhookData: any): Promise<void> {
     console.log('Processing Plisio webhook:', webhookData);
 
@@ -36,7 +37,16 @@ export class WebhookService {
         return;
       }
 
-      await this.updatePaymentStatus(result.paymentId, result.status, 'plisio', webhookData);
+      // ✅ НОВОЕ: Передаем tx_urls в updatePaymentStatus
+      await this.updatePaymentStatus(
+        result.paymentId, 
+        result.status, 
+        'plisio', 
+        webhookData,
+        undefined, // failureMessage
+        undefined, // additionalInfo
+        result.txUrls // ✅ НОВОЕ: tx_urls
+      );
       
       loggerService.logWebhookProcessed('plisio', result.paymentId, 'PENDING', result.status, webhookData);
     } catch (error) {
@@ -46,6 +56,7 @@ export class WebhookService {
     }
   }
 
+  // ✅ ОБНОВЛЕНО: Plisio Gateway webhook processing with tx_urls support
   async processPlisioGatewayWebhook(webhookData: any): Promise<void> {
     console.log('Processing Plisio Gateway webhook:', webhookData);
 
@@ -57,7 +68,16 @@ export class WebhookService {
         return;
       }
 
-      await this.updatePaymentStatus(result.paymentId, result.status, 'plisio', webhookData);
+      // ✅ НОВОЕ: Передаем tx_urls в updatePaymentStatus
+      await this.updatePaymentStatus(
+        result.paymentId, 
+        result.status, 
+        'plisio', 
+        webhookData,
+        undefined, // failureMessage
+        undefined, // additionalInfo
+        result.txUrls // ✅ НОВОЕ: tx_urls
+      );
       
       loggerService.logWebhookProcessed('plisio_gateway', result.paymentId, 'PENDING', result.status, webhookData);
     } catch (error) {
@@ -161,19 +181,24 @@ export class WebhookService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Updated updatePaymentStatus method with failure_message support
+  // ✅ ОБНОВЛЕНО: Updated updatePaymentStatus method with tx_urls support
   private async updatePaymentStatus(
     paymentId: string, 
     newStatus: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED', 
     gateway: string, 
     webhookData: any,
     failureMessage?: string, // ✅ НОВОЕ: failure_message
-    additionalInfo?: any     // ✅ НОВОЕ: дополнительная информация
+    additionalInfo?: any,    // ✅ НОВОЕ: дополнительная информация
+    txUrls?: string[]        // ✅ НОВОЕ: transaction URLs
   ): Promise<void> {
     console.log(`🔄 Updating payment ${paymentId} status to ${newStatus} from ${gateway} webhook`);
     
     if (failureMessage) {
       console.log(`💥 Payment ${paymentId} failure message: ${failureMessage}`);
+    }
+    
+    if (txUrls && txUrls.length > 0) {
+      console.log(`🔗 Payment ${paymentId} transaction URLs:`, txUrls);
     }
 
     // Find payment by gatewayOrderId (8digits-8digits format)
@@ -213,7 +238,7 @@ export class WebhookService {
 
     console.log(`Payment ${payment.id} status change: ${oldStatus} -> ${newStatus}`);
 
-    // ✅ НОВОЕ: Подготавливаем данные для обновления с failure_message
+    // ✅ НОВОЕ: Подготавливаем данные для обновления с failure_message и tx_urls
     const updateData: any = {
       status: newStatus,
       updatedAt: new Date(),
@@ -223,6 +248,12 @@ export class WebhookService {
     if (failureMessage) {
       updateData.failureMessage = failureMessage;
       console.log(`💾 Saving failure message: ${failureMessage}`);
+    }
+
+    // ✅ НОВОЕ: Добавляем tx_urls если есть
+    if (txUrls && txUrls.length > 0) {
+      updateData.txUrls = JSON.stringify(txUrls);
+      console.log(`💾 Saving transaction URLs: ${JSON.stringify(txUrls)}`);
     }
 
     // Set paidAt if payment became successful
@@ -275,6 +306,7 @@ export class WebhookService {
           oldStatus,
           newStatus,
           failureMessage, // ✅ НОВОЕ: Логируем failure_message
+          txUrls,         // ✅ НОВОЕ: Логируем tx_urls
           webhookData,
         }),
       },
@@ -290,6 +322,10 @@ export class WebhookService {
     
     if (failureMessage) {
       console.log(`💾 Failure message saved: ${failureMessage}`);
+    }
+    
+    if (txUrls && txUrls.length > 0) {
+      console.log(`💾 Transaction URLs saved: ${txUrls.length} URLs`);
     }
   }
 
@@ -328,6 +364,17 @@ export class WebhookService {
         return;
       }
 
+      // ✅ НОВОЕ: Парсим tx_urls для отправки в webhook
+      let txUrls: string[] | undefined;
+      if (payment.txUrls) {
+        try {
+          txUrls = JSON.parse(payment.txUrls);
+        } catch (error) {
+          console.error('Error parsing tx_urls for webhook:', error);
+          txUrls = undefined;
+        }
+      }
+
       // Prepare webhook payload for shop
       const webhookPayload = {
         event: eventName,
@@ -342,6 +389,7 @@ export class WebhookService {
           customer_email: payment.customerEmail,
           customer_name: payment.customerName,
           failure_message: payment.failureMessage, // ✅ НОВОЕ: Добавляем failure_message в webhook
+          tx_urls: txUrls, // ✅ НОВОЕ: Добавляем tx_urls в webhook
           created_at: payment.createdAt,
           updated_at: new Date(),
         },

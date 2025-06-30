@@ -583,7 +583,7 @@ export class PaymentService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to payment status response
+  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to payment status response
   async getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse | null> {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -603,6 +603,7 @@ export class PaymentService {
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
+        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
         orderId: true,
         gatewayOrderId: true,
         country: true,
@@ -637,6 +638,17 @@ export class PaymentService {
       paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
     }
 
+    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
+    let txUrls: string[] | null = null;
+    if (payment.txUrls) {
+      try {
+        txUrls = JSON.parse(payment.txUrls);
+      } catch (error) {
+        console.error('Error parsing tx_urls:', error);
+        txUrls = null;
+      }
+    }
+
     return {
       id: payment.id,
       gateway: payment.gateway,
@@ -654,6 +666,7 @@ export class PaymentService {
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
+      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,
       merchant_brand: payment.shop.name,
@@ -674,7 +687,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with pending_url and failure_message
+  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with pending_url, failure_message and tx_urls
   async getPaymentById(id: string): Promise<PaymentStatusResponse | null> {
     console.log(`🔍 Searching for payment with ID: ${id}`);
     console.log(`🔍 Will search by: internal ID, merchant order ID, gateway order ID, and gateway payment ID`);
@@ -704,6 +717,7 @@ export class PaymentService {
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
+        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
         orderId: true,
         gatewayOrderId: true,
         gatewayPaymentId: true,
@@ -758,6 +772,18 @@ export class PaymentService {
       paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
     }
 
+    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
+    let txUrls: string[] | null = null;
+    if (payment.txUrls) {
+      try {
+        txUrls = JSON.parse(payment.txUrls);
+        console.log(`   - Transaction URLs: ${txUrls.length} URLs found`);
+      } catch (error) {
+        console.error('Error parsing tx_urls:', error);
+        txUrls = null;
+      }
+    }
+
     return {
       id: payment.id,
       gateway: payment.gateway,
@@ -775,6 +801,7 @@ export class PaymentService {
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
+      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,
       merchant_brand: payment.shop.name,
@@ -790,7 +817,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to shop payments list
+  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to shop payments list
   async getPaymentsByShop(shopId: string, filters: PaymentFilters): Promise<{
     payments: any[];
     pagination: {
@@ -846,6 +873,7 @@ export class PaymentService {
           invoiceTotalSum: true,
           qrCode: true,
           qrUrl: true,
+          txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
           country: true,
           language: true,
           amountIsEditable: true,
@@ -874,6 +902,17 @@ export class PaymentService {
           paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
         }
 
+        // ✅ НОВОЕ: Парсим tx_urls из JSON строки
+        let txUrls: string[] | null = null;
+        if (payment.txUrls) {
+          try {
+            txUrls = JSON.parse(payment.txUrls);
+          } catch (error) {
+            console.error('Error parsing tx_urls:', error);
+            txUrls = null;
+          }
+        }
+
         return {
           id: payment.id,
           gateway: payment.gateway,
@@ -896,6 +935,7 @@ export class PaymentService {
           invoice_total_sum: payment.invoiceTotalSum,
           qr_code: payment.qrCode,
           qr_url: payment.qrUrl,
+          tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
           country: payment.country,
           language: payment.language,
           amount_is_editable: payment.amountIsEditable,
@@ -920,7 +960,7 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url and failure_message to shop payment by ID
+  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to shop payment by ID
   async getPaymentByShopAndId(shopId: string, paymentId: string): Promise<any | null> {
     const payment = await prisma.payment.findFirst({
       where: {
@@ -948,6 +988,7 @@ export class PaymentService {
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
+        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
         country: true,
         language: true,
         amountIsEditable: true,
@@ -974,6 +1015,17 @@ export class PaymentService {
       paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
     }
 
+    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
+    let txUrls: string[] | null = null;
+    if (payment.txUrls) {
+      try {
+        txUrls = JSON.parse(payment.txUrls);
+      } catch (error) {
+        console.error('Error parsing tx_urls:', error);
+        txUrls = null;
+      }
+    }
+
     return {
       id: payment.id,
       gateway: payment.gateway,
@@ -997,6 +1049,7 @@ export class PaymentService {
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
+      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
       country: payment.country,
       language: payment.language,
       amount_is_editable: payment.amountIsEditable,
