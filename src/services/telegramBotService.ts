@@ -105,17 +105,14 @@ export class TelegramBotService {
             console.log(`🔄 Reset incomplete verification for user ${telegramId}`);
           }
 
-          // User needs to verify
+          // ✅ ОБНОВЛЕНО: Новая инструкция для одной строки
           await this.bot?.sendMessage(chatId,
             `🤖 Welcome to TRAPAY notification system!\n\n` +
-            `To receive payment notifications, please:\n\n` +
-            `1️⃣ Send your *username* (login from dashboard)\n` +
-            `2️⃣ Then send your *API key*\n\n` +
-            `You can send them in one message separated by a new line or as separate messages:\n\n` +
+            `To receive payment notifications, send your credentials in one line:\n\n` +
+            `📝 Format: \`username api_key\`\n\n` +
             `Example:\n` +
-            `\`appple\`\n` +
-            `\`pk_aa6450d3f57afbefbb0f3f5be5ce6cca13037536afc5ccf14c81a6cbc7a07de5\`\n\n` +
-            `❗️ Make sure to send the data in the correct order!`,
+            `\`appple pk_aa6450d3f57afbefbb0f3f5be5ce6cca13037536afc5ccf14c81a6cbc7a07de5\`\n\n` +
+            `❗️ Make sure to separate username and API key with a space!`,
             { parse_mode: 'Markdown' }
           );
         }
@@ -250,7 +247,7 @@ export class TelegramBotService {
       }
     });
 
-    // Handle text messages (username and API key verification)
+    // ✅ ОБНОВЛЕНО: Handle text messages (single line username + API key)
     this.bot.on('message', async (msg) => {
       // Skip commands
       if (msg.text?.startsWith('/')) return;
@@ -282,48 +279,28 @@ export class TelegramBotService {
           return;
         }
 
-        // Check if message contains both username and API key (multiline)
-        const lines = messageText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        // ✅ НОВОЕ: Парсим одну строку с username и API key
+        const parts = messageText.split(/\s+/); // Разделяем по пробелам
         
-        if (lines.length === 2) {
-          // Handle multiline input (username and API key in one message)
-          const [username, apiKey] = lines;
-          await this.handleMultilineVerification(chatId, telegramId, username, apiKey);
-        } else if (lines.length === 1) {
-          const singleLine = lines[0];
-          
-          // Check if this looks like a username (no special characters, reasonable length)
-          if (singleLine.length >= 3 && singleLine.length <= 50 && /^[a-zA-Z0-9_]+$/.test(singleLine)) {
-            // This looks like a username
-            await this.handleUsernameVerification(chatId, telegramId, singleLine);
-          } 
-          // Check if this looks like an API key (starts with pk_ or sk_)
-          else if (singleLine.startsWith('pk_') || singleLine.startsWith('sk_')) {
-            // This looks like an API key
-            await this.handleApiKeyVerification(chatId, telegramId, singleLine);
-          } 
-          else {
-            await this.bot?.sendMessage(chatId,
-              `❌ Invalid data format.\n\n` +
-              `Please send:\n` +
-              `1️⃣ First your username (letters, numbers and underscore only)\n` +
-              `2️⃣ Then your API key (starts with pk\\_ or sk\\_)\n\n` +
-              `You can send them in one message separated by a new line:\n` +
-              `\`appple\`\n` +
-              `\`pk_aa6450d3f57afbefbb0f3f5be5ce6cca13037536afc5ccf14c81a6cbc7a07de5\``,
-              { parse_mode: 'Markdown' }
-            );
-          }
-        } else {
+        if (parts.length !== 2) {
           await this.bot?.sendMessage(chatId,
-            `❌ Invalid data format.\n\n` +
-            `Send username and API key in one message separated by a new line or as separate messages.\n\n` +
+            `❌ Invalid format. Please send exactly 2 parts separated by space:\n\n` +
+            `📝 Format: \`username api_key\`\n\n` +
             `Example:\n` +
-            `\`appple\`\n` +
-            `\`pk_aa6450d3f57afbefbb0f3f5be5ce6cca13037536afc5ccf14c81a6cbc7a07de5\``,
+            `\`appple pk_aa6450d3f57afbefbb0f3f5be5ce6cca13037536afc5ccf14c81a6cbc7a07de5\`\n\n` +
+            `You sent ${parts.length} parts: ${parts.map(p => `\`${p}\``).join(', ')}`,
             { parse_mode: 'Markdown' }
           );
+          return;
         }
+
+        const [username, apiKey] = parts;
+
+        console.log(`🔄 Processing single-line verification for user ${telegramId}: username="${username}", apiKey="${apiKey.substring(0, 10)}..."`);
+
+        // ✅ НОВОЕ: Используем существующий метод для обработки
+        await this.handleSingleLineVerification(chatId, telegramId, username, apiKey);
+
       } catch (error) {
         console.error('Error handling message:', error);
         await this.bot?.sendMessage(chatId, '❌ An error occurred. Please try again later.');
@@ -341,10 +318,10 @@ export class TelegramBotService {
     });
   }
 
-  // New method to handle multiline verification (username and API key in one message)
-  private async handleMultilineVerification(chatId: number, telegramId: string, username: string, apiKey: string): Promise<void> {
+  // ✅ ОБНОВЛЕНО: Renamed method to handleSingleLineVerification (existing logic)
+  private async handleSingleLineVerification(chatId: number, telegramId: string, username: string, apiKey: string): Promise<void> {
     try {
-      console.log(`🔄 Processing multiline verification for user ${telegramId}: username="${username}", apiKey="${apiKey.substring(0, 10)}..."`);
+      console.log(`🔄 Processing single-line verification for user ${telegramId}: username="${username}", apiKey="${apiKey.substring(0, 10)}..."`);
 
       // Validate username format
       if (!username || username.length < 3 || username.length > 50 || !/^[a-zA-Z0-9_]+$/.test(username)) {
@@ -465,198 +442,10 @@ export class TelegramBotService {
         { parse_mode: 'Markdown' }
       );
 
-      console.log(`✅ Telegram user ${telegramId} verified for shop ${shop.username} via multiline input`);
+      console.log(`✅ Telegram user ${telegramId} verified for shop ${shop.username} via single-line input`);
     } catch (error) {
-      console.error('Error in handleMultilineVerification:', error);
+      console.error('Error in handleSingleLineVerification:', error);
       await this.bot?.sendMessage(chatId, '❌ An error occurred while verifying data.');
-    }
-  }
-
-  private async handleUsernameVerification(chatId: number, telegramId: string, username: string): Promise<void> {
-    try {
-      console.log(`🔄 Processing username verification for user ${telegramId}: username="${username}"`);
-
-      // Find shop by username
-      const shop = await prisma.shop.findUnique({
-        where: { username },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          status: true,
-        },
-      });
-
-      if (!shop) {
-        // Show available usernames for debugging
-        const availableShops = await prisma.shop.findMany({
-          select: { username: true, name: true },
-          take: 5,
-        });
-
-        let errorMessage = `❌ Shop with username \`${username}\` not found.\n\n`;
-        
-        if (availableShops.length > 0) {
-          errorMessage += `Available usernames:\n`;
-          availableShops.forEach(s => {
-            errorMessage += `• \`${s.username}\` (${s.name})\n`;
-          });
-          errorMessage += `\nCheck spelling and try again.`;
-        } else {
-          errorMessage += `Check spelling and try again.`;
-        }
-
-        await this.bot?.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
-        return;
-      }
-
-      if (shop.status !== 'ACTIVE') {
-        await this.bot?.sendMessage(chatId,
-          `❌ Shop \`${username}\` is inactive.\n\n` +
-          `Contact administrator.`,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      // Save temporary shop association (NOT verified until API key is checked)
-      await prisma.telegramUser.update({
-        where: { telegramId },
-        data: { 
-          shopId: shop.id,
-          isVerified: false, // Important: NOT verified until API key is checked
-        },
-      });
-
-      await this.bot?.sendMessage(chatId,
-        `✅ Username \`${username}\` found!\n\n` +
-        `Shop: *${shop.name}*\n\n` +
-        `Now send your *API key* (public or secret key starting with \`pk\\_\` or \`sk\\_\`)`,
-        { parse_mode: 'Markdown' }
-      );
-
-      console.log(`📝 Temporary shop association created for user ${telegramId} with shop ${shop.username}`);
-    } catch (error) {
-      console.error('Error in handleUsernameVerification:', error);
-      await this.bot?.sendMessage(chatId, '❌ An error occurred while verifying username.');
-    }
-  }
-
-  private async handleApiKeyVerification(chatId: number, telegramId: string, apiKey: string): Promise<void> {
-    try {
-      console.log(`🔄 Processing API key verification for user ${telegramId}: apiKey="${apiKey.substring(0, 10)}..."`);
-
-      const telegramUser = await prisma.telegramUser.findUnique({
-        where: { telegramId },
-        include: { shop: true },
-      });
-
-      if (!telegramUser?.shopId) {
-        await this.bot?.sendMessage(chatId,
-          `❌ Send your username first.\n\n` +
-          `Order:\n` +
-          `1️⃣ Username\n` +
-          `2️⃣ API key`
-        );
-        return;
-      }
-
-      // Check that user is NOT verified (otherwise already connected)
-      if (telegramUser.isVerified) {
-        await this.bot?.sendMessage(chatId,
-          `✅ You are already connected to shop *${telegramUser.shop?.name || 'unknown'}*.\n\n` +
-          `Use /status to check status.`,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      // Verify API key belongs to the shop
-      const shop = await prisma.shop.findFirst({
-        where: {
-          id: telegramUser.shopId,
-          OR: [
-            { publicKey: apiKey },
-            { secretKey: apiKey },
-          ],
-        },
-      });
-
-      if (!shop) {
-        await this.bot?.sendMessage(chatId,
-          `❌ API key does not match the shop.\n\n` +
-          `Check the key or start over with /start command\n\n` +
-          `Expected key format: \`pk_...\` or \`sk_...\``,
-          { parse_mode: 'Markdown' }
-        );
-        
-        // Reset incorrect shop association
-        await prisma.telegramUser.update({
-          where: { telegramId },
-          data: { 
-            shopId: null,
-            isVerified: false,
-          },
-        });
-
-        console.log(`❌ Invalid API key for user ${telegramId}, reset shop association`);
-        return;
-      }
-
-      // Check if another user is already connected to this shop
-      const existingConnection = await prisma.telegramUser.findFirst({
-        where: {
-          shopId: shop.id,
-          isVerified: true,
-          telegramId: { not: telegramId }, // Exclude current user
-        },
-      });
-
-      if (existingConnection) {
-        await this.bot?.sendMessage(chatId,
-          `❌ Another Telegram account is already connected to shop \`${shop.username}\`.\n\n` +
-          `Disconnect the previous account first or contact administrator.`,
-          { parse_mode: 'Markdown' }
-        );
-
-        // Reset association
-        await prisma.telegramUser.update({
-          where: { telegramId },
-          data: { 
-            shopId: null,
-            isVerified: false,
-          },
-        });
-
-        return;
-      }
-
-      // Verify user successfully
-      await prisma.telegramUser.update({
-        where: { telegramId },
-        data: { isVerified: true },
-      });
-
-      await this.bot?.sendMessage(chatId,
-        `🎉 *Congratulations!*\n\n` +
-        `✅ You have been successfully connected to the notification system!\n\n` +
-        `📱 Shop: *${shop.name}*\n` +
-        `👤 Username: \`${shop.username}\`\n\n` +
-        `🔔 You will now receive notifications about:\n` +
-        `• New payments\n` +
-        `• Payment status changes\n` +
-        `• Payouts\n` +
-        `• Important events\n\n` +
-        `Commands:\n` +
-        `/status - check connection status\n` +
-        `/disconnect - disconnect from notifications`,
-        { parse_mode: 'Markdown' }
-      );
-
-      console.log(`✅ Telegram user ${telegramId} verified for shop ${shop.username}`);
-    } catch (error) {
-      console.error('Error in handleApiKeyVerification:', error);
-      await this.bot?.sendMessage(chatId, '❌ An error occurred while verifying API key.');
     }
   }
 
