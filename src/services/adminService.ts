@@ -148,6 +148,8 @@ export class AdminService {
       turnoverUSDT: number;
       commissionUSDT: number;
       merchantEarningsUSDT: number;
+      paidOutUSDT: number; // ✅ ИСПРАВЛЕНО: Добавлено поле
+      averageCheckUSDT: number; // ✅ ИСПРАВЛЕНО: Добавлено поле
     }> = {};
 
     const dailyStats: Record<string, {
@@ -214,6 +216,8 @@ export class AdminService {
             turnoverUSDT: 0,
             commissionUSDT: 0,
             merchantEarningsUSDT: 0,
+            paidOutUSDT: 0, // ✅ ИСПРАВЛЕНО: Инициализируем поле
+            averageCheckUSDT: 0, // ✅ ИСПРАВЛЕНО: Инициализируем поле
           };
         }
 
