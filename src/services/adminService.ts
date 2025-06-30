@@ -354,6 +354,7 @@ export class AdminService {
     return gatewayDisplayNames[gatewayName] || gatewayName;
   }
 
+  // ✅ ОБНОВЛЕНО: Updated getSystemStatistics with dailyRevenue for chart
   async getSystemStatistics(period: string = '30d'): Promise<any> {
     const now = new Date();
     let startDate: Date;
@@ -382,6 +383,8 @@ export class AdminService {
       successfulPayments,
       totalRevenue,
       recentPayments,
+      // ✅ НОВОЕ: Получаем платежи для дневной статистики
+      dailyPayments,
     ] = await Promise.all([
       prisma.shop.count(),
       prisma.shop.count({ where: { status: 'ACTIVE' } }),
@@ -423,6 +426,22 @@ export class AdminService {
           },
         },
       }),
+      // ✅ НОВОЕ: Получаем успешные платежи с датами для дневной статистики
+      prisma.payment.findMany({
+        where: {
+          status: 'PAID',
+          paidAt: {
+            gte: startDate,
+            lte: now,
+          },
+        },
+        select: {
+          amount: true,
+          currency: true,
+          paidAt: true,
+        },
+        orderBy: { paidAt: 'asc' },
+      }),
     ]);
 
     // Calculate total revenue in USDT
@@ -431,6 +450,29 @@ export class AdminService {
       const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
       totalRevenueUSDT += usdtAmount;
     }
+
+    // ✅ НОВОЕ: Рассчитываем дневную выручку для графика
+    const dailyRevenueMap: Record<string, number> = {};
+    
+    for (const payment of dailyPayments) {
+      if (!payment.paidAt) continue;
+      
+      const dateKey = payment.paidAt.toISOString().split('T')[0]; // YYYY-MM-DD
+      const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
+      
+      if (!dailyRevenueMap[dateKey]) {
+        dailyRevenueMap[dateKey] = 0;
+      }
+      dailyRevenueMap[dateKey] += usdtAmount;
+    }
+
+    // ✅ НОВОЕ: Формируем массив дневной выручки
+    const dailyRevenue = Object.entries(dailyRevenueMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, amount]) => ({
+        date,
+        amount: Math.round(amount * 100) / 100,
+      }));
 
     const conversionRate = totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0;
 
@@ -443,6 +485,8 @@ export class AdminService {
         totalRevenue: Math.round(totalRevenueUSDT * 100) / 100,
         conversionRate: Math.round(conversionRate * 100) / 100,
       },
+      // ✅ НОВОЕ: Добавляем дневную выручку для графика
+      dailyRevenue,
       recentPayments: recentPayments.map(payment => ({
         id: payment.id,
         amount: payment.amount,
