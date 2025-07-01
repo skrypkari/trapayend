@@ -147,6 +147,61 @@ export class PaymentLinkService {
     }
   }
 
+  // ✅ НОВОЕ: Проверка минимальной суммы платежа
+  private async checkMinimumAmount(shopId: string, gatewayName: string, amount: number): Promise<void> {
+    console.log(`💰 Checking minimum amount for shop ${shopId}, gateway ${gatewayName}, amount: ${amount}`);
+
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        gatewaySettings: true,
+      },
+    });
+
+    if (!shop) {
+      throw new Error('Shop not found');
+    }
+
+    // Получаем настройки шлюзов
+    let gatewaySettings: Record<string, any> = {};
+    
+    if (shop.gatewaySettings) {
+      try {
+        gatewaySettings = JSON.parse(shop.gatewaySettings);
+        console.log(`💰 Shop ${shop.username} gateway settings:`, gatewaySettings);
+      } catch (error) {
+        console.error('Error parsing gateway settings:', error);
+        gatewaySettings = {};
+      }
+    }
+
+    // Получаем displayName шлюза
+    const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
+    console.log(`💰 Checking settings for gateway: ${gatewayName} -> ${gatewayDisplayName}`);
+
+    // Проверяем настройки для данного шлюза
+    const settings = gatewaySettings[gatewayDisplayName];
+    if (settings && settings.minAmount !== undefined) {
+      const minAmount = settings.minAmount;
+      console.log(`💰 Gateway ${gatewayDisplayName} minimum amount: ${minAmount}`);
+      
+      if (amount < minAmount) {
+        console.error(`❌ Amount ${amount} is below minimum ${minAmount} for gateway ${gatewayDisplayName}`);
+        throw new Error(
+          `Payment amount ${amount} is below the minimum required amount of ${minAmount} for ${gatewayDisplayName} gateway. ` +
+          `Please increase the amount to at least ${minAmount}.`
+        );
+      }
+      
+      console.log(`✅ Amount ${amount} meets minimum requirement of ${minAmount} for gateway ${gatewayDisplayName}`);
+    } else {
+      console.log(`💰 No minimum amount set for gateway ${gatewayDisplayName}`);
+    }
+  }
+
   private async checkGatewayPermission(shopId: string, gatewayName: string): Promise<void> {
     console.log(`🔐 Checking gateway permission for shop ${shopId}: ${gatewayName}`);
 
@@ -251,6 +306,9 @@ export class PaymentLinkService {
     }
 
     this.validateKlymeCurrency(gatewayName, finalCurrency);
+
+    // ✅ НОВОЕ: Проверяем минимальную сумму платежа
+    await this.checkMinimumAmount(shopId, gatewayName, linkData.amount);
 
     // ✅ ИЗМЕНЕНО: Используем type вместо maxPayments
     const linkType = linkData.type || 'SINGLE';
@@ -437,6 +495,11 @@ export class PaymentLinkService {
       this.validateKlymeCurrency(updatePayload.gateway, updatePayload.currency);
     }
 
+    // ✅ НОВОЕ: Проверяем минимальную сумму при обновлении
+    if (updateData.amount && updatePayload.gateway) {
+      await this.checkMinimumAmount(shopId, updatePayload.gateway, updateData.amount);
+    }
+
     if (updateData.expiresAt) {
       updatePayload.expiresAt = new Date(updateData.expiresAt);
     }
@@ -581,6 +644,9 @@ export class PaymentLinkService {
     console.log(`👤 Customer: ${customerName || 'Anonymous'} (${customerEmail || 'no email'})`);
 
     this.validateKlymeCurrency(link.gateway, link.currency);
+
+    // ✅ НОВОЕ: Проверяем минимальную сумму платежа
+    await this.checkMinimumAmount(link.shopId, link.gateway, paymentAmount);
 
     const gatewayOrderId = this.generateGatewayOrderId();
     console.log(`🎯 Generated gateway order_id: ${gatewayOrderId} (8digits-8digits format for ${link.gateway})`);

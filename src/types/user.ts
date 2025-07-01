@@ -1,7 +1,6 @@
 export interface GatewaySettings {
   commission: number; // Percentage (0-100)
   minAmount?: number; // ✅ НОВОЕ: Минимальная сумма платежа
-  // ✅ УДАЛЕНО: payoutDelay - выплаты доступны сразу
 }
 
 export interface WalletSettings {
