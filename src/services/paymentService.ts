@@ -7,7 +7,7 @@ import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
 import { telegramBotService } from './telegramBotService';
 import { coinToPayStatusService } from './coinToPayStatusService';
-import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
+import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 
 export class PaymentService {
   private plisioService: PlisioService;
@@ -634,9 +634,12 @@ export class PaymentService {
       }
     }
 
+    // ✅ НОВОЕ: Получаем gateway ID вместо имени
+    const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
+
     return {
       id: payment.id,
-      gateway: payment.gateway,
+      gateway: gatewayId, // ✅ ИЗМЕНЕНО: Возвращаем gateway ID
       amount: payment.amount,
       currency: payment.currency,
       source_currency: payment.sourceCurrency,
@@ -762,9 +765,12 @@ export class PaymentService {
       }
     }
 
+    // ✅ НОВОЕ: Получаем gateway ID вместо имени
+    const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
+
     return {
       id: payment.id,
-      gateway: payment.gateway,
+      gateway: gatewayId, // ✅ ИЗМЕНЕНО: Возвращаем gateway ID
       amount: payment.amount,
       currency: payment.currency,
       source_currency: payment.sourceCurrency,
@@ -884,9 +890,12 @@ export class PaymentService {
           }
         }
 
+        // ✅ НОВОЕ: Получаем gateway ID вместо имени
+        const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
+
         return {
           id: payment.id,
-          gateway: payment.gateway,
+          gateway: gatewayId, // ✅ ИЗМЕНЕНО: Возвращаем gateway ID
           title: `Order ID: ${payment.gatewayOrderId}`,
           amount: payment.amount,
           currency: payment.currency,
@@ -990,9 +999,12 @@ export class PaymentService {
       }
     }
 
+    // ✅ НОВОЕ: Получаем gateway ID вместо имени
+    const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
+
     return {
       id: payment.id,
-      gateway: payment.gateway,
+      gateway: gatewayId, // ✅ ИЗМЕНЕНО: Возвращаем gateway ID
       title: `Order ID: ${payment.gatewayOrderId}`,
       amount: payment.amount,
       currency: payment.currency,
