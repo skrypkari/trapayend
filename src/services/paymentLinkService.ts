@@ -41,7 +41,7 @@ export class PaymentLinkService {
     return `${generateSegment()}-${generateSegment()}`;
   }
 
-  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk + whiteUrl
   private generateGatewayUrls(
     gatewayName: string, 
     paymentId: string, 
@@ -57,6 +57,7 @@ export class PaymentLinkService {
     dbSuccessUrl: string;
     dbFailUrl: string;
     dbPendingUrl: string;
+    whiteUrl: string | null; // ✅ НОВОЕ: Поле для whiteUrl
   } {
     if (successUrl && failUrl && pendingUrl) {
       return {
@@ -66,6 +67,7 @@ export class PaymentLinkService {
         dbSuccessUrl: successUrl,
         dbFailUrl: failUrl,
         dbPendingUrl: pendingUrl,
+        whiteUrl: null, // ✅ НОВОЕ: Если мерчант передал свои URL, whiteUrl не нужен
       };
     }
 
@@ -89,6 +91,15 @@ export class PaymentLinkService {
 
     finalFailUrl = `${baseUrl}/gateway/fail.php?id=${paymentId}`;
 
+    // ✅ НОВОЕ: Генерируем whiteUrl для всех шлюзов кроме Plisio и KLYME
+    let whiteUrl: string | null = null;
+    if (gatewayName !== 'plisio' && !gatewayName.startsWith('klyme_')) {
+      whiteUrl = `https://tesoft.uk/gateway/payment.php?id=${paymentId}`;
+      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl}`);
+    } else {
+      console.log(`🔗 No whiteUrl for ${gatewayName} (Plisio or KLYME)`);
+    }
+
     console.log(`🔗 Generated URLs for ${gatewayName} with payment ID ${paymentId}:`);
     console.log(`   🌐 Gateway Success URL: ${finalSuccessUrl}`);
     console.log(`   🌐 Gateway Fail URL: ${finalFailUrl}`);
@@ -96,6 +107,7 @@ export class PaymentLinkService {
     console.log(`   💾 DB Success URL: ${dbSuccessUrl}`);
     console.log(`   💾 DB Fail URL: ${dbFailUrl}`);
     console.log(`   💾 DB Pending URL: ${dbPendingUrl}`);
+    console.log(`   🔗 White URL: ${whiteUrl || 'none'}`);
 
     return { 
       finalSuccessUrl, 
@@ -103,7 +115,8 @@ export class PaymentLinkService {
       finalPendingUrl,
       dbSuccessUrl, 
       dbFailUrl, 
-      dbPendingUrl 
+      dbPendingUrl,
+      whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
     };
   }
 
@@ -570,6 +583,7 @@ export class PaymentLinkService {
         successUrl: 'temp',
         failUrl: 'temp',
         pendingUrl: 'temp',
+        whiteUrl: 'temp', // ✅ НОВОЕ: Временное значение для whiteUrl
         status: 'PENDING',
         orderId: null,
         gatewayOrderId: gatewayOrderId,
@@ -591,7 +605,8 @@ export class PaymentLinkService {
       finalPendingUrl,
       dbSuccessUrl, 
       dbFailUrl, 
-      dbPendingUrl 
+      dbPendingUrl,
+      whiteUrl, // ✅ НОВОЕ: Получаем whiteUrl
     } = this.generateGatewayUrls(
       link.gateway, 
       payment.id, 
@@ -608,6 +623,7 @@ export class PaymentLinkService {
         successUrl: dbSuccessUrl,
         failUrl: dbFailUrl,
         pendingUrl: dbPendingUrl,
+        whiteUrl: whiteUrl, // ✅ НОВОЕ: Сохраняем whiteUrl
       },
     });
 
@@ -616,6 +632,7 @@ export class PaymentLinkService {
     console.log(`💾 DB Success URL: ${dbSuccessUrl}`);
     console.log(`💾 DB Fail URL: ${dbFailUrl}`);
     console.log(`💾 DB Pending URL: ${dbPendingUrl}`);
+    console.log(`🔗 White URL: ${whiteUrl || 'none'}`); // ✅ НОВОЕ: Логируем whiteUrl
 
     let gatewayPaymentId: string | undefined;
     let externalPaymentUrl: string | undefined;
