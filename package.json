@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Payment system backend with authentication",
   "main": "dist/server.js",
+  "type": "commonjs",
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
