@@ -212,6 +212,10 @@ export const createPaymentSchema = Joi.object({
   redirectUrl: Joi.string().uri().required(),
   customerEmail: Joi.string().email().optional(),
   customerName: Joi.string().min(1).max(100).optional(),
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
+  customerIp: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
+  customerUa: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
@@ -231,8 +235,13 @@ export const createPublicPaymentSchema = Joi.object({
   expires_at: Joi.date().iso().greater('now').optional(),
   success_url: Joi.string().uri().optional(),
   fail_url: Joi.string().uri().optional(),
+  pending_url: Joi.string().uri().optional(),
   customer_email: Joi.string().email().optional(),
   customer_name: Joi.string().min(1).max(100).optional(),
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customer_country: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
+  customer_ip: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
+  customer_ua: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
@@ -253,12 +262,23 @@ export const updatePaymentSchema = Joi.object({
   externalPaymentUrl: Joi.string().uri().optional().allow(''),
   customerEmail: Joi.string().email().optional(),
   customerName: Joi.string().min(1).max(100).optional(),
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
+  customerIp: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
+  customerUa: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
   amountIsEditable: Joi.boolean().optional(),
   maxPayments: Joi.number().integer().min(1).optional(),
   customer: Joi.string().pattern(/^cus_/).optional(),
+});
+
+// ✅ НОВОЕ: Схема валидации для обновления клиентских данных
+export const updateCustomerDataSchema = Joi.object({
+  customerCountry: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
+  customerIp: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
+  customerUa: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
 });
 
 // ✅ ОБНОВЛЕНО: Admin payment update schema с поддержкой PROCESSING статуса
@@ -352,6 +372,10 @@ export const updatePaymentLinkSchema = Joi.object({
 export const initiatePaymentFromLinkSchema = Joi.object({
   customerEmail: Joi.string().email().optional(),
   customerName: Joi.string().min(1).max(100).optional(),
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
+  customerIp: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
+  customerUa: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
 });
 
 // Settings validation schemas

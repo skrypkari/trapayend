@@ -172,6 +172,10 @@ model Payment {
   gatewayOrderId      String?       @map("gateway_order_id") // Gateway order ID (always generated, 8digits-8digits)
   customerEmail       String?       @map("customer_email")
   customerName        String?       @map("customer_name")
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry     String?       @map("customer_country") // ✅ НОВОЕ: Страна клиента
+  customerIp          String?       @map("customer_ip")      // ✅ НОВОЕ: IP адрес клиента
+  customerUa          String?       @map("customer_ua") @db.Text // ✅ НОВОЕ: User Agent клиента
   // New Plisio fields
   invoiceTotalSum     Float?        @map("invoice_total_sum")
   qrCode              String?       @map("qr_code") @db.Text

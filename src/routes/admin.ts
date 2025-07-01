@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AdminController } from '../controllers/adminController';
-import { validate, createUserSchema, updateUserSchema, createPayoutSchema } from '../middleware/validation';
+import { validate, createUserSchema, updateUserSchema, createPayoutSchema, updateCustomerDataSchema } from '../middleware/validation'; // ✅ ДОБАВЛЕНО: updateCustomerDataSchema
 import { authenticateToken, requireAdmin } from '../middleware/auth';
 import { loggerService } from '../services/loggerService';
 import { coinToPayStatusService } from '../services/coinToPayStatusService';
@@ -35,6 +35,9 @@ router.delete('/payouts/:id', adminController.deletePayout);
 router.get('/payments', adminController.getPayments);
 router.get('/payments/:id', adminController.getPaymentById);
 router.put('/payments/:id', adminController.updatePayment);
+
+// ✅ НОВОЕ: Эндпоинт для обновления клиентских данных
+router.put('/payments/:id/customer', validate(updateCustomerDataSchema), adminController.updateCustomerData);
 
 // User management routes
 router.get('/users', adminController.getUsers);

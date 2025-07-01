@@ -3,6 +3,7 @@ import { AdminService } from '../services/adminService';
 import { PaymentLinkService } from '../services/paymentLinkService'; // ✅ ДОБАВЛЕНО
 import { telegramBotService } from '../services/telegramBotService';
 import { UpdateUserRequest } from '../types/user';
+import { UpdateCustomerDataRequest } from '../types/payment'; // ✅ НОВОЕ: Импорт нового типа
 import { MerchantsAwaitingPayoutFilters, CreatePayoutRequest, PayoutFilters, MerchantStatisticsFilters } from '../types/admin';
 
 export class AdminController {
@@ -364,6 +365,26 @@ export class AdminController {
       res.json({
         success: true,
         message: 'Payment updated successfully',
+        result: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ✅ НОВОЕ: PUT /api/admin/payments/:id/customer - Update customer data
+  updateCustomerData = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const customerData: UpdateCustomerDataRequest = req.body;
+      
+      console.log(`🔄 Admin updating customer data for payment ${id}:`, customerData);
+      
+      const result = await this.adminService.updateCustomerData(id, customerData);
+      
+      res.json({
+        success: true,
+        message: 'Customer data updated successfully',
         result: result,
       });
     } catch (error) {

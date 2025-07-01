@@ -9,6 +9,10 @@ export interface CreatePaymentRequest {
   redirectUrl: string;
   customerEmail?: string;
   customerName?: string;
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry?: string; // ✅ НОВОЕ: Страна клиента
+  customerIp?: string;      // ✅ НОВОЕ: IP адрес клиента
+  customerUa?: string;      // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country?: string;
   language?: string;
@@ -32,6 +36,10 @@ export interface CreatePublicPaymentRequest {
   pending_url?: string;
   customer_email?: string;
   customer_name?: string;
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customer_country?: string; // ✅ НОВОЕ: Страна клиента
+  customer_ip?: string;      // ✅ НОВОЕ: IP адрес клиента
+  customer_ua?: string;      // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country?: string;
   language?: string;
@@ -52,12 +60,23 @@ export interface UpdatePaymentRequest {
   externalPaymentUrl?: string;
   customerEmail?: string;
   customerName?: string;
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry?: string; // ✅ НОВОЕ: Страна клиента
+  customerIp?: string;      // ✅ НОВОЕ: IP адрес клиента
+  customerUa?: string;      // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country?: string;
   language?: string;
   amountIsEditable?: boolean;
   maxPayments?: number;
   customer?: string;
+}
+
+// ✅ НОВОЕ: Интерфейс для обновления клиентских данных
+export interface UpdateCustomerDataRequest {
+  customerCountry?: string; // ✅ НОВОЕ: Страна клиента
+  customerIp?: string;      // ✅ НОВОЕ: IP адрес клиента
+  customerUa?: string;      // ✅ НОВОЕ: User Agent клиента
 }
 
 export interface PaymentResponse {
@@ -74,6 +93,10 @@ export interface PaymentResponse {
   externalPaymentUrl?: string | null; // Original gateway URL (for internal use)
   customerEmail?: string | null;
   customerName?: string | null;
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customerCountry?: string | null; // ✅ НОВОЕ: Страна клиента
+  customerIp?: string | null;      // ✅ НОВОЕ: IP адрес клиента
+  customerUa?: string | null;      // ✅ НОВОЕ: User Agent клиента
   // New Rapyd fields
   country?: string | null;
   language?: string | null;
@@ -118,6 +141,10 @@ export interface PaymentStatusResponse {
   white_url?: string | null;
   customer_email?: string | null;
   customer_name?: string | null;
+  // ✅ НОВОЕ: Добавлены поля для информации о клиенте
+  customer_country?: string | null; // ✅ НОВОЕ: Страна клиента
+  customer_ip?: string | null;      // ✅ НОВОЕ: IP адрес клиента
+  customer_ua?: string | null;      // ✅ НОВОЕ: User Agent клиента
   invoice_total_sum?: number | null;
   qr_code?: string | null;
   qr_url?: string | null;
