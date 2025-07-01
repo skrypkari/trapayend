@@ -16,7 +16,7 @@ import { CreateUserRequest, UserResponse, UpdateUserRequest } from '../types/use
 import { UpdateCustomerDataRequest } from '../types/payment'; // ✅ ДОБАВЛЕНО
 
 export class AdminService {
-  // ✅ ИСПРАВЛЕНО: Новая логика подсчета статистики выплат
+  // ✅ ИСПРАВЛЕНО: Возвращаем правильную структуру PayoutStats
   async getPayoutStats(): Promise<PayoutStats> {
     console.log('📊 Calculating payout statistics...');
 
@@ -47,11 +47,9 @@ export class AdminService {
 
     console.log(`💰 Found ${paidPayments.length} paid payments`);
 
-    let totalAmountUSDT = 0;
-    let completedAmountUSDT = 0;
-    let pendingAmountUSDT = 0;
-    let completedCount = 0;
-    let pendingCount = 0;
+    let totalPayoutUSDT = 0;      // Сумма всех оплаченных мерчанту транзакций, с вычетом комиссии
+    let awaitingPayoutUSDT = 0;   // Сумма всех ожидающих выплат, с вычетом комиссии
+    let availableBalanceUSDT = 0; // Сумма всех ожидающих выплат без вычета комиссии
 
     // Обрабатываем каждый платеж
     for (const payment of paidPayments) {
@@ -73,17 +71,14 @@ export class AdminService {
         const commission = gatewaySettings.commission || 10;
         const amountAfterCommission = amountUSDT * (1 - commission / 100);
 
-        totalAmountUSDT += amountAfterCommission;
-
         if (payment.merchantPaid) {
           // Платеж уже выплачен мерчанту
-          completedAmountUSDT += amountAfterCommission;
-          completedCount++;
+          totalPayoutUSDT += amountAfterCommission;
           console.log(`✅ Payment ${payment.id}: ${amountAfterCommission.toFixed(2)} USDT (paid out)`);
         } else {
           // Платеж ожидает выплаты
-          pendingAmountUSDT += amountAfterCommission;
-          pendingCount++;
+          awaitingPayoutUSDT += amountAfterCommission;      // С вычетом комиссии
+          availableBalanceUSDT += amountUSDT;               // Без вычета комиссии
           console.log(`⏳ Payment ${payment.id}: ${amountAfterCommission.toFixed(2)} USDT (pending payout)`);
         }
       } catch (error) {
@@ -111,21 +106,19 @@ export class AdminService {
 
     const thisMonthAmount = thisMonthPayouts.reduce((sum, payout) => sum + payout.amount, 0);
 
-    const stats = {
-      totalPayouts: paidPayments.length,           // Всего платежей PAID
-      completedPayouts: completedCount,            // Платежи с merchantPaid = true
-      pendingPayouts: pendingCount,                // Платежи с merchantPaid = false
-      rejectedPayouts: 0,                          // Убираем как просили
-      totalAmount: Math.round(totalAmountUSDT * 100) / 100,        // Общая сумма (после комиссии)
-      completedAmount: Math.round(completedAmountUSDT * 100) / 100, // Выплачено (merchantPaid = true)
-      pendingAmount: Math.round(pendingAmountUSDT * 100) / 100,     // Ожидает выплаты (merchantPaid = false)
+    // ✅ ИСПРАВЛЕНО: Возвращаем правильную структуру PayoutStats
+    const stats: PayoutStats = {
+      totalPayout: Math.round(totalPayoutUSDT * 100) / 100,           // Сумма всех оплаченных мерчанту транзакций, с вычетом комиссии
+      awaitingPayout: Math.round(awaitingPayoutUSDT * 100) / 100,     // Сумма всех ожидающих выплат, с вычетом комиссии
+      thisMonth: Math.round(thisMonthAmount * 100) / 100,             // Сумма всех выплат в текущем месяце
+      availableBalance: Math.round(availableBalanceUSDT * 100) / 100, // Сумма всех ожидающих выплат без вычета комиссии
     };
 
     console.log('📊 Payout statistics calculated:');
-    console.log(`   💰 Total payments: ${stats.totalPayouts}`);
-    console.log(`   ✅ Completed payouts: ${stats.completedPayouts} (${stats.completedAmount} USDT)`);
-    console.log(`   ⏳ Pending payouts: ${stats.pendingPayouts} (${stats.pendingAmount} USDT)`);
-    console.log(`   💵 Total amount: ${stats.totalAmount} USDT`);
+    console.log(`   💰 Total payout: ${stats.totalPayout} USDT (paid to merchants)`);
+    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (after commission)`);
+    console.log(`   💵 Available balance: ${stats.availableBalance} USDT (before commission)`);
+    console.log(`   📅 This month: ${stats.thisMonth} USDT`);
 
     return stats;
   }
