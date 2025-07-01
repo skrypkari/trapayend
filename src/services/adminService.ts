@@ -15,7 +15,7 @@ import {
 import { CreateUserRequest, UserResponse, UpdateUserRequest } from '../types/user';
 
 export class AdminService {
-  // ✅ ОБНОВЛЕНО: Исправлен расчет заработка шлюза
+  // ✅ ИСПРАВЛЕНО: Правильный расчет Gateway Earnings и Conversion Rate
   async getMerchantStatistics(filters: MerchantStatisticsFilters): Promise<MerchantStatistics> {
     console.log('📊 Getting merchant statistics with filters:', filters);
 
@@ -60,29 +60,23 @@ export class AdminService {
 
     console.log(`📅 Period: ${dateFrom.toISOString()} - ${dateTo.toISOString()}`);
 
-    // Базовые условия для запросов
-    const baseWhere: any = {
-      status: 'PAID',
-      paidAt: {
-        gte: dateFrom,
-        lte: dateTo,
+    // ✅ ИСПРАВЛЕНО: Получаем ВСЕ платежи за период (не только PAID) для правильного расчета конверсии
+    const allPayments = await prisma.payment.findMany({
+      where: {
+        createdAt: {
+          gte: dateFrom,
+          lte: dateTo,
+        },
+        ...(filters.shopId && { shopId: filters.shopId }),
       },
-    };
-
-    // Добавляем фильтр по мерчанту если указан
-    if (filters.shopId) {
-      baseWhere.shopId = filters.shopId;
-    }
-
-    // Получаем все успешные платежи за период
-    const payments = await prisma.payment.findMany({
-      where: baseWhere,
       select: {
         id: true,
         shopId: true,
         amount: true,
         currency: true,
         gateway: true,
+        status: true,
+        createdAt: true,
         paidAt: true,
         shop: {
           select: {
@@ -95,7 +89,11 @@ export class AdminService {
       },
     });
 
-    console.log(`💰 Found ${payments.length} successful payments`);
+    console.log(`📊 Found ${allPayments.length} total payments for conversion calculation`);
+
+    // Фильтруем только успешные платежи для расчета оборота
+    const paidPayments = allPayments.filter(payment => payment.status === 'PAID');
+    console.log(`💰 Found ${paidPayments.length} successful payments for revenue calculation`);
 
     // Получаем все выплаты за период
     const payoutsWhere: any = {
@@ -148,8 +146,8 @@ export class AdminService {
       turnoverUSDT: number;
       commissionUSDT: number;
       merchantEarningsUSDT: number;
-      paidOutUSDT: number; // ✅ ИСПРАВЛЕНО: Добавлено поле
-      averageCheckUSDT: number; // ✅ ИСПРАВЛЕНО: Добавлено поле
+      paidOutUSDT: number;
+      averageCheckUSDT: number;
     }> = {};
 
     const dailyStats: Record<string, {
@@ -159,8 +157,8 @@ export class AdminService {
       paymentsCount: number;
     }> = {};
 
-    // Обрабатываем платежи
-    for (const payment of payments) {
+    // Обрабатываем только успешные платежи для расчета оборота
+    for (const payment of paidPayments) {
       // Конвертируем в USDT
       const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
       totalTurnoverUSDT += amountUSDT;
@@ -216,8 +214,8 @@ export class AdminService {
             turnoverUSDT: 0,
             commissionUSDT: 0,
             merchantEarningsUSDT: 0,
-            paidOutUSDT: 0, // ✅ ИСПРАВЛЕНО: Инициализируем поле
-            averageCheckUSDT: 0, // ✅ ИСПРАВЛЕНО: Инициализируем поле
+            paidOutUSDT: 0,
+            averageCheckUSDT: 0,
           };
         }
 
@@ -257,9 +255,14 @@ export class AdminService {
       merchantPayouts[payout.shopId] += payout.amount;
     }
 
-    // ✅ ИСПРАВЛЕНО: Заработано шлюзом = Оборот - Выплачено мерчанту
-    const gatewayEarningsUSDT = totalTurnoverUSDT - totalPaidOutUSDT;
+    // ✅ ИСПРАВЛЕНО: Gateway Earnings = Оборот - Merchant Earnings (комиссия шлюза)
     const merchantEarningsUSDT = totalTurnoverUSDT - totalCommissionUSDT;
+    const gatewayEarningsUSDT = totalCommissionUSDT; // Комиссия шлюза
+
+    // ✅ ИСПРАВЛЕНО: Правильный расчет конверсии на основе всех платежей
+    const conversionRate = allPayments.length > 0 ? (paidPayments.length / allPayments.length) * 100 : 0;
+
+    console.log(`📊 Conversion calculation: ${paidPayments.length} paid / ${allPayments.length} total = ${conversionRate.toFixed(2)}%`);
 
     // Добавляем информацию о выплатах к статистике мерчантов
     for (const shopId in merchantStats) {
@@ -274,14 +277,14 @@ export class AdminService {
       // Основные метрики
       totalTurnover: Math.round(totalTurnoverUSDT * 100) / 100,
       merchantEarnings: Math.round(merchantEarningsUSDT * 100) / 100,
-      gatewayEarnings: Math.round(gatewayEarningsUSDT * 100) / 100, // ✅ ИСПРАВЛЕНО
+      gatewayEarnings: Math.round(gatewayEarningsUSDT * 100) / 100, // ✅ ИСПРАВЛЕНО: Теперь это комиссия шлюза
       totalPaidOut: Math.round(totalPaidOutUSDT * 100) / 100,
-      averageCheck: payments.length > 0 ? Math.round((totalTurnoverUSDT / payments.length) * 100) / 100 : 0,
+      averageCheck: paidPayments.length > 0 ? Math.round((totalTurnoverUSDT / paidPayments.length) * 100) / 100 : 0,
       
       // Дополнительная информация
-      totalPayments: payments.length,
-      successfulPayments: payments.length, // Все платежи уже успешные (PAID)
-      conversionRate: 100, // 100% так как мы считаем только успешные платежи
+      totalPayments: allPayments.length, // ✅ ИСПРАВЛЕНО: Общее количество всех платежей
+      successfulPayments: paidPayments.length, // ✅ ИСПРАВЛЕНО: Количество успешных платежей
+      conversionRate: Math.round(conversionRate * 100) / 100, // ✅ ИСПРАВЛЕНО: Правильная конверсия
       
       // Разбивка по шлюзам
       gatewayBreakdown: Object.entries(gatewayStats).map(([gateway, stats]) => ({
@@ -334,7 +337,9 @@ export class AdminService {
       merchantEarnings: result.merchantEarnings,
       gatewayEarnings: result.gatewayEarnings,
       totalPaidOut: result.totalPaidOut,
-      paymentsCount: result.totalPayments,
+      totalPayments: result.totalPayments,
+      successfulPayments: result.successfulPayments,
+      conversionRate: result.conversionRate,
     });
 
     return result;
