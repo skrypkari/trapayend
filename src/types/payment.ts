@@ -90,6 +90,8 @@ export interface PaymentResponse {
   failureMessage?: string | null;
   // ✅ НОВОЕ: Поле для transaction URLs
   txUrls?: string[] | null;
+  // ✅ НОВОЕ: Поле для whiteUrl
+  whiteUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
   shop?: {
@@ -112,6 +114,8 @@ export interface PaymentStatusResponse {
   fail_url: string;
   // ✅ НОВОЕ: Добавлен pending_url
   pending_url?: string | null;
+  // ✅ НОВОЕ: Добавлен white_url
+  white_url?: string | null;
   customer_email?: string | null;
   customer_name?: string | null;
   invoice_total_sum?: number | null;

@@ -156,6 +156,8 @@ model Payment {
   successUrl          String        @map("success_url") @db.Text
   failUrl             String        @map("fail_url") @db.Text
   pendingUrl          String?       @map("pending_url") @db.Text // ✅ НОВОЕ: URL для ожидания
+  // ✅ НОВОЕ: Поле whiteUrl
+  whiteUrl            String?       @map("white_url") @db.Text // ✅ НОВОЕ: URL для белого домена
   status              PaymentStatus @default(PENDING)
   externalPaymentUrl  String?       @map("external_payment_url") @db.Text
   gatewayPaymentId    String?       @map("gateway_payment_id")
