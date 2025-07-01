@@ -1,32 +1,50 @@
+import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
-import { CreatePaymentRequest, UpdatePaymentRequest, PaymentResponse, PaymentFilters } from '../types/payment';
+import { 
+  ShopProfileResponse, 
+  UpdateShopProfileRequest, 
+  UpdateWalletsRequest 
+} from '../types/shop';
+import { 
+  CreatePaymentRequest, 
+  UpdatePaymentRequest, 
+  PaymentResponse, 
+  PaymentFilters 
+} from '../types/payment';
+import { 
+  PayoutResponse, 
+  PayoutFilters, 
+  PayoutStatistics, 
+  ShopPayoutStats,
+  PayoutStats,
+  ShopPayoutResponse 
+} from '../types/payout';
 import { WebhookLogResponse, WebhookLogFilters } from '../types/webhook';
-import { ShopProfileResponse, UpdateShopProfileRequest, GatewaySettings, UpdateWalletsRequest } from '../types/shop';
-import { PayoutResponse, PayoutFilters, PayoutStatistics, PayoutStats, ShopPayoutStats, ShopPayoutResponse } from '../types/payout';
 import { PlisioService } from './gateways/plisioService';
 import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
-import { KlymeService } from './gateways/klymeService'; // ✅ ДОБАВЛЕНО
+import { KlymeService } from './gateways/klymeService';
+import { telegramBotService } from './telegramBotService';
+import { coinToPayStatusService } from './coinToPayStatusService';
+import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 import { currencyService } from './currencyService';
-import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 
 export class ShopService {
   private plisioService: PlisioService;
   private rapydService: RapydService;
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
-  private klymeService: KlymeService; // ✅ ДОБАВЛЕНО
+  private klymeService: KlymeService;
 
   constructor() {
     this.plisioService = new PlisioService();
     this.rapydService = new RapydService();
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
-    this.klymeService = new KlymeService(); // ✅ ДОБАВЛЕНО
+    this.klymeService = new KlymeService();
   }
 
-  // Helper method to generate gateway order ID in format xxxxxxxx-xxxxxxxx (8digits-8digits) for ALL gateways with uniqueness check
   private async generateGatewayOrderId(): Promise<string> {
     let gatewayOrderId: string;
     let attempts = 0;
@@ -39,13 +57,12 @@ export class ShopService {
       
       gatewayOrderId = `${generateSegment()}-${generateSegment()}`;
       
-      // Check if this order ID already exists
       const existingPayment = await prisma.payment.findFirst({
         where: { gatewayOrderId },
       });
 
       if (!existingPayment) {
-        break; // Unique ID found
+        break;
       }
 
       attempts++;
@@ -60,75 +77,229 @@ export class ShopService {
     return gatewayOrderId;
   }
 
-  // ✅ НОВЫЙ: Helper method to generate gateway-specific URLs
-  private generateGatewayUrls(gatewayName: string, orderId: string, baseUrl: string, successUrl?: string, failUrl?: string): {
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk + whiteUrl
+  private generateGatewayUrls(
+    gatewayName: string, 
+    paymentId: string, 
+    gatewayOrderId: string,
+    baseUrl: string, 
+    successUrl?: string, 
+    failUrl?: string,
+    pendingUrl?: string
+  ): {
     finalSuccessUrl: string;
     finalFailUrl: string;
+    finalPendingUrl: string;
+    dbSuccessUrl: string;
+    dbFailUrl: string;
+    dbPendingUrl: string;
+    whiteUrl: string | null; // ✅ НОВОЕ: Поле для whiteUrl
   } {
-    // If merchant provided custom URLs, use them
-    if (successUrl && failUrl) {
+    if (successUrl && failUrl && pendingUrl) {
       return {
         finalSuccessUrl: successUrl,
         finalFailUrl: failUrl,
+        finalPendingUrl: pendingUrl,
+        dbSuccessUrl: successUrl,
+        dbFailUrl: failUrl,
+        dbPendingUrl: pendingUrl,
+        whiteUrl: null, // ✅ НОВОЕ: Если мерчант передал свои URL, whiteUrl не нужен
       };
     }
 
-    // Generate default URLs based on gateway
+    // ✅ ОБНОВЛЕНО: Везде используем app.trapay.uk с payment_id параметром
+    const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
+
     let finalSuccessUrl: string;
     let finalFailUrl: string;
+    let finalPendingUrl: string;
 
+    // Для KLYME, CoinToPay и Noda используем pending URL как success URL
     if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
-      // ✅ Для Noda и KLYME: /payment/pending после успешной оплаты
-      finalSuccessUrl = successUrl || `${baseUrl}/payment/pending?id=${orderId}`;
+      finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     } else {
-      // ✅ Для остальных шлюзов: /payment/success после успешной оплаты
-      finalSuccessUrl = successUrl || `${baseUrl}/payment/success?id=${orderId}`;
+      finalSuccessUrl = `${baseUrl}/gateway/success.php?id=${paymentId}`;
+      finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     }
 
-    // ✅ Для всех шлюзов: /payment/fail при неудаче
-    finalFailUrl = failUrl || `${baseUrl}/payment/failed?id=${orderId}`;
+    finalFailUrl = `${baseUrl}/gateway/fail.php?id=${paymentId}`;
 
-    console.log(`🔗 Generated URLs for ${gatewayName}:`);
-    console.log(`   ✅ Success: ${finalSuccessUrl}`);
-    console.log(`   ❌ Fail: ${finalFailUrl}`);
-
-    return { finalSuccessUrl, finalFailUrl };
-  }
-
-  // Helper method to get gateway-specific settings
-  private getGatewaySettings(shop: any, gateway: string): { commission: number; payoutDelay: number } {
-    const gatewaySettings = shop.gatewaySettings ? JSON.parse(shop.gatewaySettings) : null;
-    const gatewayName = gateway.charAt(0).toUpperCase() + gateway.slice(1).toLowerCase(); // Capitalize first letter
-    
-    if (gatewaySettings && gatewaySettings[gatewayName]) {
-      return {
-        commission: gatewaySettings[gatewayName].commission,
-        payoutDelay: gatewaySettings[gatewayName].payoutDelay,
-      };
+    // ✅ НОВОЕ: Генерируем whiteUrl для всех шлюзов кроме Plisio и KLYME
+    let whiteUrl: string | null = null;
+    if (gatewayName !== 'plisio' && !gatewayName.startsWith('klyme_')) {
+      whiteUrl = `https://tesoft.uk/gateway/payment.php?id=${paymentId}`;
+      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl}`);
+    } else {
+      console.log(`🔗 No whiteUrl for ${gatewayName} (Plisio or KLYME)`);
     }
-    
-    // Fallback to default settings
-    return {
-      commission: 0, // Default commission if no gateway-specific settings
-      payoutDelay: 0, // Default payout delay if no gateway-specific settings
+
+    console.log(`🔗 Generated URLs for ${gatewayName} with payment ID ${paymentId}:`);
+    console.log(`   🌐 Gateway Success URL: ${finalSuccessUrl}`);
+    console.log(`   🌐 Gateway Fail URL: ${finalFailUrl}`);
+    console.log(`   🌐 Gateway Pending URL: ${finalPendingUrl}`);
+    console.log(`   💾 DB Success URL: ${dbSuccessUrl}`);
+    console.log(`   💾 DB Fail URL: ${dbFailUrl}`);
+    console.log(`   💾 DB Pending URL: ${dbPendingUrl}`);
+    console.log(`   🔗 White URL: ${whiteUrl || 'none'}`);
+
+    return { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl,
+      whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
     };
   }
 
-  // Helper method to check if payment is eligible for payout
-  private isEligibleForPayout(payment: any, gatewaySettings: { commission: number; payoutDelay: number }): boolean {
-    if (payment.status !== 'PAID' || payment.merchantPaid || !payment.paidAt) {
-      return false;
-    }
+  private validateKlymeCurrency(gatewayName: string, currency: string): void {
+    if (!gatewayName.startsWith('klyme_')) return;
 
-    const payoutDelayMs = gatewaySettings.payoutDelay * 24 * 60 * 60 * 1000; // Convert days to milliseconds
-    const eligibleDate = new Date(payment.paidAt.getTime() + payoutDelayMs);
-    
-    return new Date() > eligibleDate;
+    const region = getKlymeRegionFromGatewayName(gatewayName);
+    const upperCurrency = currency.toUpperCase();
+
+    switch (region) {
+      case 'EU':
+        if (upperCurrency !== 'EUR') {
+          throw new Error(`KLYME EU accepts only EUR currency, got: ${upperCurrency}`);
+        }
+        break;
+      case 'GB':
+        if (upperCurrency !== 'GBP') {
+          throw new Error(`KLYME GB accepts only GBP currency, got: ${upperCurrency}`);
+        }
+        break;
+      case 'DE':
+        if (upperCurrency !== 'EUR') {
+          throw new Error(`KLYME DE accepts only EUR currency, got: ${upperCurrency}`);
+        }
+        break;
+      default:
+        throw new Error(`Unsupported KLYME region: ${region}`);
+    }
   }
 
-  // Helper method to calculate amount after commission
-  private calculateAmountAfterCommission(amount: number, commission: number): number {
-    return amount * (1 - commission / 100);
+  // ✅ НОВОЕ: Проверка минимальной суммы платежа
+  private async checkMinimumAmount(shopId: string, gatewayName: string, amount: number): Promise<void> {
+    console.log(`💰 Checking minimum amount for shop ${shopId}, gateway ${gatewayName}, amount: ${amount}`);
+
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        gatewaySettings: true,
+      },
+    });
+
+    if (!shop) {
+      throw new Error('Shop not found');
+    }
+
+    // Получаем настройки шлюзов
+    let gatewaySettings: Record<string, any> = {};
+    
+    if (shop.gatewaySettings) {
+      try {
+        gatewaySettings = JSON.parse(shop.gatewaySettings);
+        console.log(`💰 Shop ${shop.username} gateway settings:`, gatewaySettings);
+      } catch (error) {
+        console.error('Error parsing gateway settings:', error);
+        gatewaySettings = {};
+      }
+    }
+
+    // Получаем displayName шлюза
+    const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
+    console.log(`💰 Checking settings for gateway: ${gatewayName} -> ${gatewayDisplayName}`);
+
+    // Проверяем настройки для данного шлюза
+    const settings = gatewaySettings[gatewayDisplayName];
+    if (settings && settings.minAmount !== undefined) {
+      const minAmount = settings.minAmount;
+      console.log(`💰 Gateway ${gatewayDisplayName} minimum amount: ${minAmount}`);
+      
+      if (amount < minAmount) {
+        console.error(`❌ Amount ${amount} is below minimum ${minAmount} for gateway ${gatewayDisplayName}`);
+        throw new Error(
+          `Payment amount ${amount} is below the minimum required amount of ${minAmount} for ${gatewayDisplayName} gateway. ` +
+          `Please increase the amount to at least ${minAmount}.`
+        );
+      }
+      
+      console.log(`✅ Amount ${amount} meets minimum requirement of ${minAmount} for gateway ${gatewayDisplayName}`);
+    } else {
+      console.log(`💰 No minimum amount set for gateway ${gatewayDisplayName}`);
+    }
+  }
+
+  private async checkGatewayPermission(shopId: string, gatewayName: string): Promise<void> {
+    console.log(`🔐 Checking gateway permission for shop ${shopId}: ${gatewayName}`);
+
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        paymentGateways: true,
+      },
+    });
+
+    if (!shop) {
+      throw new Error('Shop not found');
+    }
+
+    let enabledGateways: string[] = [];
+    
+    if (shop.paymentGateways) {
+      try {
+        enabledGateways = JSON.parse(shop.paymentGateways);
+        console.log(`🔐 Shop ${shop.username} enabled gateways:`, enabledGateways);
+      } catch (error) {
+        console.error('Error parsing payment gateways:', error);
+        enabledGateways = ['Plisio'];
+      }
+    } else {
+      enabledGateways = ['Plisio'];
+      console.log(`🔐 Shop ${shop.username} using default gateways:`, enabledGateways);
+    }
+
+    const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
+    
+    console.log(`🔐 Checking if "${gatewayDisplayName}" is in enabled gateways:`, enabledGateways);
+
+    if (!enabledGateways.includes(gatewayDisplayName)) {
+      console.error(`❌ Gateway "${gatewayDisplayName}" not allowed for shop ${shop.username}`);
+      console.error(`❌ Enabled gateways: ${enabledGateways.join(', ')}`);
+      
+      throw new Error(
+        `Gateway "${gatewayDisplayName}" is not enabled for your shop. ` +
+        `Enabled gateways: ${enabledGateways.join(', ')}. ` +
+        `Please contact support to enable additional gateways.`
+      );
+    }
+
+    console.log(`✅ Gateway "${gatewayDisplayName}" is allowed for shop ${shop.username}`);
+  }
+
+  private getGatewayDisplayName(gatewayName: string): string {
+    const gatewayDisplayNames: Record<string, string> = {
+      'plisio': 'Plisio',
+      'rapyd': 'Rapyd',
+      'noda': 'Noda',
+      'cointopay': 'CoinToPay',
+      'klyme_eu': 'KLYME EU',
+      'klyme_gb': 'KLYME GB',
+      'klyme_de': 'KLYME DE',
+    };
+
+    return gatewayDisplayNames[gatewayName] || gatewayName;
   }
 
   // Shop profile management
@@ -144,18 +315,36 @@ export class ShopService {
         paymentGateways: true,
         gatewaySettings: true,
         publicKey: true,
-        // Wallet fields
         usdtPolygonWallet: true,
         usdtTrcWallet: true,
         usdtErcWallet: true,
         usdcPolygonWallet: true,
         status: true,
         createdAt: true,
+        settings: {
+          select: {
+            webhookUrl: true,
+            webhookEvents: true,
+          },
+        },
       },
     });
 
     if (!shop) {
       throw new Error('Shop not found');
+    }
+
+    // Parse webhook events (handle JSON for MySQL)
+    let webhookEvents: string[] = [];
+    if (shop.settings?.webhookEvents) {
+      try {
+        webhookEvents = Array.isArray(shop.settings.webhookEvents) 
+          ? shop.settings.webhookEvents 
+          : JSON.parse(shop.settings.webhookEvents as string);
+      } catch (error) {
+        console.error('Error parsing webhook events:', error);
+        webhookEvents = [];
+      }
     }
 
     return {
@@ -167,7 +356,8 @@ export class ShopService {
       gateways: shop.paymentGateways ? JSON.parse(shop.paymentGateways) : null,
       gatewaySettings: shop.gatewaySettings ? JSON.parse(shop.gatewaySettings) : null,
       publicKey: shop.publicKey,
-      // Wallet fields
+      webhookUrl: shop.settings?.webhookUrl,
+      webhookEvents: webhookEvents,
       wallets: {
         usdtPolygonWallet: shop.usdtPolygonWallet,
         usdtTrcWallet: shop.usdtTrcWallet,
@@ -180,35 +370,26 @@ export class ShopService {
   }
 
   async updateShopProfile(shopId: string, updateData: UpdateShopProfileRequest): Promise<ShopProfileResponse> {
-    const updatePayload: any = { ...updateData };
+    const updatePayload: any = {};
 
-    // Handle field name mappings
     if (updateData.fullName) {
       updatePayload.name = updateData.fullName;
-      delete updatePayload.fullName;
     }
 
-    if (updateData.telegramId) {
-      updatePayload.telegram = updateData.telegramId;
-      delete updatePayload.telegramId;
+    if (updateData.telegramId !== undefined) {
+      updatePayload.telegram = updateData.telegramId || null;
     }
 
-    // Handle merchant URL
     if (updateData.merchantUrl) {
       updatePayload.shopUrl = updateData.merchantUrl;
-      delete updatePayload.merchantUrl;
     }
 
-    // Handle gateways
     if (updateData.gateways) {
       updatePayload.paymentGateways = JSON.stringify(updateData.gateways);
-      delete updatePayload.gateways;
     }
 
-    // Handle gateway settings
     if (updateData.gatewaySettings) {
       updatePayload.gatewaySettings = JSON.stringify(updateData.gatewaySettings);
-      delete updatePayload.gatewaySettings;
     }
 
     // Handle wallet fields
@@ -225,7 +406,6 @@ export class ShopService {
       if (updateData.wallets.usdcPolygonWallet !== undefined) {
         updatePayload.usdcPolygonWallet = updateData.wallets.usdcPolygonWallet || null;
       }
-      delete updatePayload.wallets;
     }
 
     const updatedShop = await prisma.shop.update({
@@ -240,15 +420,33 @@ export class ShopService {
         paymentGateways: true,
         gatewaySettings: true,
         publicKey: true,
-        // Wallet fields
         usdtPolygonWallet: true,
         usdtTrcWallet: true,
         usdtErcWallet: true,
         usdcPolygonWallet: true,
         status: true,
         createdAt: true,
+        settings: {
+          select: {
+            webhookUrl: true,
+            webhookEvents: true,
+          },
+        },
       },
     });
+
+    // Parse webhook events (handle JSON for MySQL)
+    let webhookEvents: string[] = [];
+    if (updatedShop.settings?.webhookEvents) {
+      try {
+        webhookEvents = Array.isArray(updatedShop.settings.webhookEvents) 
+          ? updatedShop.settings.webhookEvents 
+          : JSON.parse(updatedShop.settings.webhookEvents as string);
+      } catch (error) {
+        console.error('Error parsing webhook events:', error);
+        webhookEvents = [];
+      }
+    }
 
     return {
       id: updatedShop.id,
@@ -259,7 +457,8 @@ export class ShopService {
       gateways: updatedShop.paymentGateways ? JSON.parse(updatedShop.paymentGateways) : null,
       gatewaySettings: updatedShop.gatewaySettings ? JSON.parse(updatedShop.gatewaySettings) : null,
       publicKey: updatedShop.publicKey,
-      // Wallet fields
+      webhookUrl: updatedShop.settings?.webhookUrl,
+      webhookEvents: webhookEvents,
       wallets: {
         usdtPolygonWallet: updatedShop.usdtPolygonWallet,
         usdtTrcWallet: updatedShop.usdtTrcWallet,
@@ -271,43 +470,32 @@ export class ShopService {
     };
   }
 
-  // New method to update only wallet settings
   async updateWallets(shopId: string, walletData: UpdateWalletsRequest): Promise<void> {
-    const updatePayload: any = {};
+    const updateData: any = {};
 
     if (walletData.usdtPolygonWallet !== undefined) {
-      updatePayload.usdtPolygonWallet = walletData.usdtPolygonWallet || null;
+      updateData.usdtPolygonWallet = walletData.usdtPolygonWallet || null;
     }
     if (walletData.usdtTrcWallet !== undefined) {
-      updatePayload.usdtTrcWallet = walletData.usdtTrcWallet || null;
+      updateData.usdtTrcWallet = walletData.usdtTrcWallet || null;
     }
     if (walletData.usdtErcWallet !== undefined) {
-      updatePayload.usdtErcWallet = walletData.usdtErcWallet || null;
+      updateData.usdtErcWallet = walletData.usdtErcWallet || null;
     }
     if (walletData.usdcPolygonWallet !== undefined) {
-      updatePayload.usdcPolygonWallet = walletData.usdcPolygonWallet || null;
+      updateData.usdcPolygonWallet = walletData.usdcPolygonWallet || null;
     }
 
     await prisma.shop.update({
       where: { id: shopId },
-      data: updatePayload,
+      data: updateData,
     });
   }
 
-  // New method to test webhook
-  async testWebhook(shopId: string): Promise<{
-    webhookUrl: string | null;
-    statusCode: number;
-    responseTime: number;
-    success: boolean;
-    error?: string;
-  }> {
-    // Get shop settings to find webhook URL
+  async testWebhook(shopId: string): Promise<{ success: boolean; message: string }> {
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
-      select: {
-        id: true,
-        name: true,
+      include: {
         settings: {
           select: {
             webhookUrl: true,
@@ -317,25 +505,17 @@ export class ShopService {
       },
     });
 
-    if (!shop) {
-      throw new Error('Shop not found');
+    if (!shop || !shop.settings?.webhookUrl) {
+      throw new Error('No webhook URL configured');
     }
 
-    const webhookUrl = shop.settings?.webhookUrl;
-    
-    if (!webhookUrl) {
-      throw new Error('No webhook URL configured. Please set up your webhook URL in settings first.');
-    }
-
-    // Create test webhook payload
-    const testGatewayOrderId = await this.generateGatewayOrderId();
     const testPayload = {
-      event: 'payment.success',
+      event: 'test',
       payment: {
-        id: 'test_payment_' + Date.now(),
-        order_id: null, // Merchant order ID (null for test)
-        gateway_order_id: testGatewayOrderId, // Gateway order ID
-        gateway: 'plisio',
+        id: 'test_payment_123',
+        order_id: 'test_order_456',
+        gateway_order_id: '12345678-87654321',
+        gateway: 'test',
         amount: 100,
         currency: 'USD',
         status: 'paid',
@@ -344,390 +524,330 @@ export class ShopService {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
-      test: true, // Indicate this is a test webhook
-      shop: {
-        id: shop.id,
-        name: shop.name,
-      },
-      timestamp: new Date().toISOString(),
     };
 
-    const startTime = Date.now();
-    let statusCode = 0;
-    let success = false;
-    let error: string | undefined;
-
     try {
-      console.log(`🧪 Sending test webhook to: ${webhookUrl}`);
-      console.log('Test payload:', JSON.stringify(testPayload, null, 2));
-
-      const response = await fetch(webhookUrl, {
+      const response = await fetch(shop.settings.webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'TesSoft Payment System/1.0 (Test Webhook)',
-          'X-Webhook-Test': 'true',
+          'User-Agent': 'TesSoft Payment System/1.0',
         },
         body: JSON.stringify(testPayload),
       });
 
-      statusCode = response.status;
-      success = response.ok;
-
-      if (!response.ok) {
-        const responseText = await response.text();
-        error = `HTTP ${response.status}: ${responseText}`;
-        console.error(`❌ Test webhook failed: ${error}`);
+      if (response.ok) {
+        return {
+          success: true,
+          message: `Test webhook sent successfully (${response.status})`,
+        };
       } else {
-        console.log(`✅ Test webhook sent successfully: ${response.status}`);
+        return {
+          success: false,
+          message: `Webhook returned error: ${response.status} ${response.statusText}`,
+        };
       }
-
-    } catch (fetchError) {
-      error = fetchError instanceof Error ? fetchError.message : 'Unknown error';
-      console.error(`❌ Test webhook error: ${error}`);
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to send webhook: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
     }
-
-    const responseTime = Date.now() - startTime;
-
-    // Log the test webhook attempt
-    try {
-      await prisma.webhookLog.create({
-        data: {
-          paymentId: 'test_webhook',
-          shopId: shop.id,
-          event: 'test_webhook',
-          statusCode: statusCode,
-          responseBody: JSON.stringify({
-            success,
-            error,
-            responseTime,
-            testPayload,
-          }),
-        },
-      });
-    } catch (logError) {
-      console.error('Failed to log test webhook:', logError);
-    }
-
-    return {
-      webhookUrl,
-      statusCode,
-      responseTime,
-      success,
-      error,
-    };
   }
 
   // Payment management
   async createPayment(paymentData: CreatePaymentRequest): Promise<PaymentResponse> {
-    // Validate and convert gateway ID to name if needed
-    let gatewayName: string;
-    
-    if (isValidGatewayId(paymentData.gateway)) {
-      // It's a gateway ID, convert to name
-      const convertedName = getGatewayNameById(paymentData.gateway);
-      if (!convertedName) {
-        throw new Error(`Gateway not found for ID: ${paymentData.gateway}`);
-      }
-      gatewayName = convertedName;
-    } else {
-      // It's already a gateway name
-      gatewayName = paymentData.gateway.toLowerCase();
+    const {
+      shopId,
+      gateway: gatewayId,
+      amount,
+      currency,
+      sourceCurrency,
+      usage,
+      expiresAt,
+      redirectUrl,
+      customerEmail,
+      customerName,
+      country,
+      language,
+      amountIsEditable,
+      maxPayments,
+      customer,
+    } = paymentData;
+
+    if (!isValidGatewayId(gatewayId)) {
+      throw new Error(`Invalid gateway ID: ${gatewayId}. Valid IDs are: 0001 (Plisio), 0010 (Rapyd), 0100 (CoinToPay), 1000 (Noda), 1001 (KLYME EU), 1010 (KLYME GB), 1100 (KLYME DE)`);
     }
 
-    console.log(`🔄 Creating shop payment for gateway: ${gatewayName}`);
+    const gatewayName = getGatewayNameById(gatewayId);
+    if (!gatewayName) {
+      throw new Error(`Gateway not found for ID: ${gatewayId}`);
+    }
 
-    // ALWAYS generate gateway order ID in format xxxxxxxx-xxxxxxxx for ALL gateways with uniqueness check
+    console.log(`🔄 Creating payment for gateway ID ${gatewayId} (${gatewayName})`);
+
+    await this.checkGatewayPermission(shopId, gatewayName);
+
+    // ✅ НОВОЕ: Проверяем минимальную сумму платежа
+    await this.checkMinimumAmount(shopId, gatewayName, amount);
+
+    this.validateKlymeCurrency(gatewayName, currency || 'USD');
+
     const gatewayOrderId = await this.generateGatewayOrderId();
     console.log(`🎯 Generated unique gateway order_id: ${gatewayOrderId} (8digits-8digits format for ${gatewayName})`);
 
-    // Get shop information including gateway settings
-    const shop = await prisma.shop.findUnique({
-      where: { id: paymentData.shopId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        gatewaySettings: true,
-      },
-    });
-
-    if (!shop) {
-      throw new Error('Shop not found');
-    }
-
-    // Get gateway-specific settings
-    const gatewayConfig = this.getGatewaySettings(shop, gatewayName);
-
-    // ✅ ИСПРАВЛЕНО: Generate gateway-specific URLs
-    const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
-    const { finalSuccessUrl, finalFailUrl } = this.generateGatewayUrls(
-      gatewayName, 
-      gatewayOrderId, 
-      baseUrl, 
-      paymentData.redirectUrl, // Use redirectUrl as successUrl
-      undefined // No custom failUrl for shop payments
-    );
-
-    // Create payment in database first
     const payment = await prisma.payment.create({
       data: {
-        shopId: paymentData.shopId,
-        gateway: gatewayName, // Store gateway name in database
-        amount: paymentData.amount,
-        currency: paymentData.currency || 'USD',
-        sourceCurrency: paymentData.sourceCurrency || null,
-        usage: paymentData.usage || 'ONCE',
-        expiresAt: paymentData.expiresAt,
-        successUrl: finalSuccessUrl,
-        failUrl: finalFailUrl,
+        shopId,
+        gateway: gatewayName,
+        amount,
+        currency: currency || 'USD',
+        sourceCurrency: sourceCurrency || null,
+        usage: usage || 'ONCE',
+        expiresAt: expiresAt || null,
+        successUrl: 'temp',
+        failUrl: 'temp',
+        pendingUrl: 'temp',
+        whiteUrl: 'temp', // ✅ НОВОЕ: Временное значение для whiteUrl
         status: 'PENDING',
-        orderId: null, // No merchant order ID for shop-created payments
-        gatewayOrderId: gatewayOrderId, // Store gateway order ID
-        customerEmail: paymentData.customerEmail || null,
-        customerName: paymentData.customerName || null,
-        // New Rapyd fields
-        country: paymentData.country || null,
-        language: paymentData.language || null,
-        amountIsEditable: paymentData.amountIsEditable || null,
-        maxPayments: paymentData.maxPayments || null,
-        rapydCustomer: paymentData.customer || null,
-      },
-      include: {
-        shop: {
-          select: {
-            name: true,
-            username: true,
-          },
-        },
+        orderId: null,
+        gatewayOrderId: gatewayOrderId,
+        customerEmail: customerEmail || null,
+        customerName: customerName || null,
+        country: country || null,
+        language: language || null,
+        amountIsEditable: amountIsEditable || null,
+        maxPayments: maxPayments || null,
+        rapydCustomer: customer || null,
       },
     });
 
-    console.log(`💾 Shop payment created with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+    console.log(`💾 Payment created in database:`);
+    console.log(`   - Internal ID: ${payment.id}`);
+    console.log(`   - Gateway order_id: ${gatewayOrderId} (8digits-8digits)`);
 
-    let externalPaymentUrl: string | undefined; // Original gateway URL
+    const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
+    const { 
+      finalSuccessUrl, 
+      finalFailUrl, 
+      finalPendingUrl,
+      dbSuccessUrl, 
+      dbFailUrl, 
+      dbPendingUrl,
+      whiteUrl, // ✅ НОВОЕ: Получаем whiteUrl
+    } = this.generateGatewayUrls(
+      gatewayName, 
+      payment.id, 
+      gatewayOrderId,
+      baseUrl, 
+      undefined, 
+      undefined,
+      undefined
+    );
 
-    // Process payment through gateway if needed
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        successUrl: dbSuccessUrl,
+        failUrl: dbFailUrl,
+        pendingUrl: dbPendingUrl,
+        whiteUrl: whiteUrl, // ✅ НОВОЕ: Сохраняем whiteUrl
+      },
+    });
+
+    console.log(`   - DB Success URL: ${dbSuccessUrl}`);
+    console.log(`   - DB Fail URL: ${dbFailUrl}`);
+    console.log(`   - DB Pending URL: ${dbPendingUrl}`);
+    console.log(`   - White URL: ${whiteUrl || 'none'}`); // ✅ НОВОЕ: Логируем whiteUrl
+
+    let gatewayPaymentId: string | undefined;
+    let externalPaymentUrl: string | undefined;
+
     try {
       if (gatewayName === 'plisio') {
-        // Apply Plisio-specific logic for currency handling
-        let plisioCurrency: string;
-        let plisioSourceCurrency: string;
-        let isSourceCurrency: boolean;
-
-        if (paymentData.sourceCurrency) {
-          // Shop specified both currency and sourceCurrency - use Plisio mapping
-          plisioCurrency = paymentData.sourceCurrency; // What user pays with (crypto)
-          plisioSourceCurrency = paymentData.currency || 'USD'; // What shop receives (fiat)
-          isSourceCurrency = false; // User is specifying target currency
-        } else {
-          // Shop only specified currency - treat as source currency (what they want to receive)
-          plisioCurrency = 'USD'; // Default target currency
-          plisioSourceCurrency = paymentData.currency || 'USD'; // What shop receives
-          isSourceCurrency = true; // Shop is specifying source currency
-        }
-
         const plisioResult = await this.plisioService.createPayment({
           paymentId: payment.id,
-          orderId: gatewayOrderId, // Send gateway order ID to Plisio
-          amount: paymentData.amount,
-          currency: plisioCurrency,
-          productName: `Order ID: ${gatewayOrderId}`, // Use gateway order ID
-          description: `Order ID: ${gatewayOrderId}`, // Use gateway order ID
+          orderId: gatewayOrderId,
+          amount,
+          currency: currency || 'USD',
+          productName: `Order ID: ${gatewayOrderId}`,
+          description: `Order ID: ${gatewayOrderId}`,
           successUrl: finalSuccessUrl,
           failUrl: finalFailUrl,
-          customerEmail: paymentData.customerEmail,
-          customerName: paymentData.customerName,
-          isSourceCurrency: isSourceCurrency,
+          customerEmail,
+          customerName,
+          isSourceCurrency: !!sourceCurrency,
+          sourceCurrency,
         });
 
-        externalPaymentUrl = plisioResult.payment_url; // Store original Plisio URL
+        gatewayPaymentId = plisioResult.gateway_payment_id;
+        externalPaymentUrl = plisioResult.payment_url;
 
-        // Update payment with gateway information
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            externalPaymentUrl: externalPaymentUrl, // Store original Plisio URL
-            gatewayPaymentId: plisioResult.gateway_payment_id,
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
             invoiceTotalSum: Number(plisioResult.invoice_total_sum),
             qrCode: plisioResult.qr_code,
             qrUrl: plisioResult.qr_url,
           },
         });
 
-        // Update the payment object for response
-        payment.externalPaymentUrl = externalPaymentUrl;
-        payment.gatewayPaymentId = plisioResult.gateway_payment_id;
       } else if (gatewayName === 'rapyd') {
-        // ✅ ИСПРАВЛЕНО: Всегда используем GB для Rapyd
-        const rapydCountry = 'GB'; // Всегда Британия
-        console.log(`🇬🇧 Using GB (Britain) as country for Rapyd shop payment`);
+        const rapydCountry = 'GB';
+        console.log(`🇬🇧 Using GB (Britain) as country for Rapyd payment`);
 
         const rapydResult = await this.rapydService.createPaymentLink({
           paymentId: payment.id,
-          orderId: gatewayOrderId, // Send gateway order ID to Rapyd
-          orderName: `Order ID: ${gatewayOrderId}`, // Use gateway order ID
-          amount: paymentData.amount,
-          currency: paymentData.currency || 'USD',
-          country: rapydCountry, // ✅ Всегда GB
-          usage: paymentData.usage || 'ONCE',
-          maxPayments: paymentData.maxPayments,
+          orderId: gatewayOrderId,
+          orderName: `Order ID: ${gatewayOrderId}`,
+          amount,
+          currency: currency || 'USD',
+          country: rapydCountry,
+          language: language || 'EN',
+          amountIsEditable: amountIsEditable || false,
+          usage: usage || 'ONCE',
+          maxPayments,
+          customer,
           successUrl: finalSuccessUrl,
           failUrl: finalFailUrl,
         });
 
-        externalPaymentUrl = rapydResult.payment_url; // Store original Rapyd URL
+        gatewayPaymentId = rapydResult.gateway_payment_id;
+        externalPaymentUrl = rapydResult.payment_url;
 
-        // Update payment with gateway information
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            externalPaymentUrl: externalPaymentUrl, // Store original Rapyd URL
-            gatewayPaymentId: rapydResult.gateway_payment_id,
-            country: rapydCountry, // Store GB in database
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            country: rapydCountry,
           },
         });
 
-        // Update the payment object for response
-        payment.externalPaymentUrl = externalPaymentUrl;
-        payment.gatewayPaymentId = rapydResult.gateway_payment_id;
       } else if (gatewayName === 'noda') {
-        console.log(`🔄 Creating Noda shop payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`🔄 Creating Noda payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
 
         const nodaResult = await this.nodaService.createPaymentLink({
           paymentId: payment.id,
-          orderId: gatewayOrderId, // Send gateway order ID to Noda
-          name: `Order ID: ${gatewayOrderId}`, // Use gateway order ID
-          paymentDescription: `Order ID: ${gatewayOrderId}`, // Use gateway order ID
-          amount: paymentData.amount,
-          currency: paymentData.currency || 'USD',
+          orderId: gatewayOrderId,
+          name: `Order ID: ${gatewayOrderId}`,
+          paymentDescription: `Order ID: ${gatewayOrderId}`,
+          amount,
+          currency: currency || 'USD',
           webhookUrl: `https://tesoft.uk/gateways/noda/webhook`,
-          returnUrl: finalSuccessUrl,
-          expiryDate: paymentData.expiresAt?.toISOString(),
+          returnUrl: finalPendingUrl,
+          expiryDate: expiresAt?.toISOString(),
         });
 
-        externalPaymentUrl = nodaResult.payment_url; // Store original Noda URL
+        gatewayPaymentId = nodaResult.gateway_payment_id;
+        externalPaymentUrl = nodaResult.payment_url;
 
-        // Update payment with gateway information
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            externalPaymentUrl: externalPaymentUrl, // Store original Noda URL
-            gatewayPaymentId: nodaResult.gateway_payment_id,
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
             qrUrl: nodaResult.qr_code_url,
           },
         });
 
-        // Update the payment object for response
-        payment.externalPaymentUrl = externalPaymentUrl;
-        payment.gatewayPaymentId = nodaResult.gateway_payment_id;
-
-        console.log(`✅ Noda shop payment created successfully with gateway order_id: ${gatewayOrderId}`);
       } else if (gatewayName === 'cointopay') {
-        console.log(`🪙 Creating CoinToPay shop payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
-        console.log(`💰 Amount: ${paymentData.amount} EUR (always EUR for CoinToPay)`);
+        console.log(`🪙 Creating CoinToPay payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${amount} EUR (always EUR for CoinToPay)`);
 
         const coinToPayResult = await this.coinToPayService.createPaymentLink({
           paymentId: payment.id,
-          orderId: gatewayOrderId, // Send gateway order ID to CoinToPay
-          amount: paymentData.amount, // Only amount needed, always in EUR
+          orderId: gatewayOrderId,
+          amount,
         });
 
-        externalPaymentUrl = coinToPayResult.payment_url; // Store original CoinToPay URL
+        gatewayPaymentId = coinToPayResult.gateway_payment_id;
+        externalPaymentUrl = coinToPayResult.payment_url;
 
-        // Update payment with gateway information
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            externalPaymentUrl: externalPaymentUrl, // Store original CoinToPay URL
-            gatewayPaymentId: coinToPayResult.gateway_payment_id,
-            currency: 'EUR', // ✅ Force EUR for CoinToPay
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            currency: 'EUR',
           },
         });
 
-        // Update the payment object for response
-        payment.externalPaymentUrl = externalPaymentUrl;
-        payment.gatewayPaymentId = coinToPayResult.gateway_payment_id;
+        if (gatewayPaymentId) {
+          console.log(`🪙 Scheduling individual status checks for CoinToPay payment: ${payment.id} (${gatewayPaymentId})`);
+          coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
+        }
 
-        console.log(`✅ CoinToPay shop payment created successfully with gateway order_id: ${gatewayOrderId}`);
       } else if (gatewayName.startsWith('klyme_')) {
-        // ✅ ДОБАВЛЕНО: KLYME integration for shop payments
         const region = getKlymeRegionFromGatewayName(gatewayName);
         
         if (!region) {
           throw new Error(`Invalid KLYME gateway: ${gatewayName}`);
         }
 
-        if (region !== 'EU' && region !== 'GB') {
-          throw new Error(`KLYME payment creation is only supported for EU and GB regions, got: ${region}`);
-        }
-
-        console.log(`💳 Creating KLYME ${region} shop payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
-        console.log(`💰 Amount: ${paymentData.amount} ${paymentData.currency || 'USD'}`);
+        console.log(`💳 Creating KLYME ${region} payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${amount} ${currency || 'USD'} (validated for ${region})`);
 
         const klymeResult = await this.klymeService.createPaymentLink({
           paymentId: payment.id,
-          orderId: gatewayOrderId, // Send gateway order ID to KLYME (will be used as reference)
-          amount: paymentData.amount,
-          currency: paymentData.currency || 'USD',
+          orderId: gatewayOrderId,
+          amount,
+          currency: currency || 'USD',
           region,
-          redirectUrl: finalSuccessUrl, // KLYME will use this for redirect
+          redirectUrl: finalPendingUrl,
         });
 
-        externalPaymentUrl = klymeResult.payment_url; // Store original KLYME URL
+        gatewayPaymentId = klymeResult.gateway_payment_id;
+        externalPaymentUrl = klymeResult.payment_url;
 
-        // Update payment with gateway information
         await prisma.payment.update({
           where: { id: payment.id },
           data: {
-            externalPaymentUrl: externalPaymentUrl, // Store original KLYME URL
-            gatewayPaymentId: klymeResult.gateway_payment_id,
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
           },
         });
 
-        // Update the payment object for response
-        payment.externalPaymentUrl = externalPaymentUrl;
-        payment.gatewayPaymentId = klymeResult.gateway_payment_id;
-
-        console.log(`✅ KLYME ${region} shop payment created successfully with gateway order_id: ${gatewayOrderId}`);
+      } else {
+        throw new Error(`Unsupported gateway: ${gatewayName}`);
       }
+
     } catch (gatewayError) {
-      // If gateway fails, update payment status to failed
       await prisma.payment.update({
         where: { id: payment.id },
         data: { status: 'FAILED' },
       });
       
-      console.error('Gateway error during shop payment creation:', gatewayError);
-      // Continue with payment creation even if gateway fails
+      throw new Error(`Gateway error: ${gatewayError instanceof Error ? gatewayError.message : 'Unknown error'}`);
     }
 
-    // ✅ Return tesoft.uk/gateway/payment.php?id= URL instead of external gateway URL
-    const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
     return {
       id: payment.id,
       shopId: payment.shopId,
-      gateway: payment.gateway,
+      gateway: gatewayId, // Return gateway ID instead of name
       amount: payment.amount,
       currency: payment.currency,
       sourceCurrency: payment.sourceCurrency,
       usage: payment.usage,
       expiresAt: payment.expiresAt,
-      redirectUrl: paymentUrl, // ✅ Return tesoft.uk/gateway/payment.php?id= URL
+      redirectUrl: paymentUrl, // ✅ Always tesoft.uk URL for merchants
       status: payment.status,
       externalPaymentUrl: externalPaymentUrl, // Original gateway URL (for internal use)
       customerEmail: payment.customerEmail,
       customerName: payment.customerName,
-      // New Rapyd fields
       country: payment.country,
       language: payment.language,
       amountIsEditable: payment.amountIsEditable,
       maxPayments: payment.maxPayments,
       customer: payment.rapydCustomer,
+      whiteUrl: whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
-      shop: payment.shop,
     };
   }
 
@@ -746,19 +866,16 @@ export class ShopService {
     const where: any = { shopId };
     
     if (status) {
-      where.status = status;
+      where.status = status.toUpperCase();
     }
     
     if (gateway) {
-      // If gateway filter is provided, check if it's an ID or name
       if (isValidGatewayId(gateway)) {
-        // It's a gateway ID, convert to name
         const gatewayName = getGatewayNameById(gateway);
         if (gatewayName) {
           where.gateway = gatewayName;
         }
       } else {
-        // It's a gateway name
         where.gateway = gateway.toLowerCase();
       }
     }
@@ -769,7 +886,28 @@ export class ShopService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          shopId: true,
+          gateway: true,
+          amount: true,
+          currency: true,
+          sourceCurrency: true,
+          usage: true,
+          expiresAt: true,
+          successUrl: true,
+          status: true,
+          externalPaymentUrl: true,
+          customerEmail: true,
+          customerName: true,
+          country: true,
+          language: true,
+          amountIsEditable: true,
+          maxPayments: true,
+          rapydCustomer: true,
+          whiteUrl: true, // ✅ НОВОЕ: Добавлено поле whiteUrl
+          createdAt: true,
+          updatedAt: true,
           shop: {
             select: {
               name: true,
@@ -783,29 +921,30 @@ export class ShopService {
 
     return {
       payments: payments.map(payment => {
-        // ✅ Return tesoft.uk/gateway/payment.php?id= URL instead of external gateway URL
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
 
         return {
           id: payment.id,
           shopId: payment.shopId,
-          gateway: payment.gateway,
+          gateway: gatewayId, // Return gateway ID instead of name
           amount: payment.amount,
           currency: payment.currency,
           sourceCurrency: payment.sourceCurrency,
           usage: payment.usage,
           expiresAt: payment.expiresAt,
-          redirectUrl: paymentUrl, // ✅ Return tesoft.uk/gateway/payment.php?id= URL
+          redirectUrl: paymentUrl, // ✅ Always tesoft.uk URL for merchants
           status: payment.status,
           externalPaymentUrl: payment.externalPaymentUrl, // Original gateway URL (for internal use)
           customerEmail: payment.customerEmail,
           customerName: payment.customerName,
-          // New Rapyd fields
           country: payment.country,
           language: payment.language,
           amountIsEditable: payment.amountIsEditable,
           maxPayments: payment.maxPayments,
           customer: payment.rapydCustomer,
+          whiteUrl: payment.whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
           createdAt: payment.createdAt,
           updatedAt: payment.updatedAt,
           shop: payment.shop,
@@ -826,7 +965,28 @@ export class ShopService {
         id: paymentId,
         shopId,
       },
-      include: {
+      select: {
+        id: true,
+        shopId: true,
+        gateway: true,
+        amount: true,
+        currency: true,
+        sourceCurrency: true,
+        usage: true,
+        expiresAt: true,
+        successUrl: true,
+        status: true,
+        externalPaymentUrl: true,
+        customerEmail: true,
+        customerName: true,
+        country: true,
+        language: true,
+        amountIsEditable: true,
+        maxPayments: true,
+        rapydCustomer: true,
+        whiteUrl: true, // ✅ НОВОЕ: Добавлено поле whiteUrl
+        createdAt: true,
+        updatedAt: true,
         shop: {
           select: {
             name: true,
@@ -834,6 +994,14 @@ export class ShopService {
           },
         },
         webhookLogs: {
+          select: {
+            id: true,
+            event: true,
+            statusCode: true,
+            retryCount: true,
+            responseBody: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
@@ -842,29 +1010,30 @@ export class ShopService {
 
     if (!payment) return null;
 
-    // ✅ Return tesoft.uk/gateway/payment.php?id= URL instead of external gateway URL
-    const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+    const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
 
     return {
       id: payment.id,
       shopId: payment.shopId,
-      gateway: payment.gateway,
+      gateway: gatewayId, // Return gateway ID instead of name
       amount: payment.amount,
       currency: payment.currency,
       sourceCurrency: payment.sourceCurrency,
       usage: payment.usage,
       expiresAt: payment.expiresAt,
-      redirectUrl: paymentUrl, // ✅ Return tesoft.uk/gateway/payment.php?id= URL
+      redirectUrl: paymentUrl, // ✅ Always tesoft.uk URL for merchants
       status: payment.status,
       externalPaymentUrl: payment.externalPaymentUrl, // Original gateway URL (for internal use)
       customerEmail: payment.customerEmail,
       customerName: payment.customerName,
-      // New Rapyd fields
       country: payment.country,
       language: payment.language,
       amountIsEditable: payment.amountIsEditable,
       maxPayments: payment.maxPayments,
       customer: payment.rapydCustomer,
+      whiteUrl: payment.whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
       shop: payment.shop,
@@ -873,29 +1042,57 @@ export class ShopService {
   }
 
   async updatePayment(shopId: string, paymentId: string, updateData: UpdatePaymentRequest): Promise<PaymentResponse> {
-    // Handle gateway ID to name conversion if needed
     const updatePayload: any = { ...updateData };
-    
+
     if (updateData.gateway) {
       if (isValidGatewayId(updateData.gateway)) {
-        // It's a gateway ID, convert to name
         const gatewayName = getGatewayNameById(updateData.gateway);
         if (gatewayName) {
+          await this.checkGatewayPermission(shopId, gatewayName);
           updatePayload.gateway = gatewayName;
         }
       } else {
-        // It's already a gateway name
         updatePayload.gateway = updateData.gateway.toLowerCase();
       }
     }
 
-    const payment = await prisma.payment.update({
+    if (updatePayload.gateway && updateData.currency) {
+      this.validateKlymeCurrency(updatePayload.gateway, updateData.currency);
+    }
+
+    // ✅ НОВОЕ: Проверяем минимальную сумму при обновлении
+    if (updateData.amount && updatePayload.gateway) {
+      await this.checkMinimumAmount(shopId, updatePayload.gateway, updateData.amount);
+    }
+
+    const updatedPayment = await prisma.payment.update({
       where: {
         id: paymentId,
         shopId,
       },
       data: updatePayload,
-      include: {
+      select: {
+        id: true,
+        shopId: true,
+        gateway: true,
+        amount: true,
+        currency: true,
+        sourceCurrency: true,
+        usage: true,
+        expiresAt: true,
+        successUrl: true,
+        status: true,
+        externalPaymentUrl: true,
+        customerEmail: true,
+        customerName: true,
+        country: true,
+        language: true,
+        amountIsEditable: true,
+        maxPayments: true,
+        rapydCustomer: true,
+        whiteUrl: true, // ✅ НОВОЕ: Добавлено поле whiteUrl
+        createdAt: true,
+        updatedAt: true,
         shop: {
           select: {
             name: true,
@@ -905,32 +1102,33 @@ export class ShopService {
       },
     });
 
-    // ✅ Return tesoft.uk/gateway/payment.php?id= URL instead of external gateway URL
-    const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${updatedPayment.id}`;
+    const gatewayId = getGatewayIdByName(updatedPayment.gateway) || updatedPayment.gateway;
 
     return {
-      id: payment.id,
-      shopId: payment.shopId,
-      gateway: payment.gateway,
-      amount: payment.amount,
-      currency: payment.currency,
-      sourceCurrency: payment.sourceCurrency,
-      usage: payment.usage,
-      expiresAt: payment.expiresAt,
-      redirectUrl: paymentUrl, // ✅ Return tesoft.uk/gateway/payment.php?id= URL
-      status: payment.status,
-      externalPaymentUrl: payment.externalPaymentUrl, // Original gateway URL (for internal use)
-      customerEmail: payment.customerEmail,
-      customerName: payment.customerName,
-      // New Rapyd fields
-      country: payment.country,
-      language: payment.language,
-      amountIsEditable: payment.amountIsEditable,
-      maxPayments: payment.maxPayments,
-      customer: payment.rapydCustomer,
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt,
-      shop: payment.shop,
+      id: updatedPayment.id,
+      shopId: updatedPayment.shopId,
+      gateway: gatewayId, // Return gateway ID instead of name
+      amount: updatedPayment.amount,
+      currency: updatedPayment.currency,
+      sourceCurrency: updatedPayment.sourceCurrency,
+      usage: updatedPayment.usage,
+      expiresAt: updatedPayment.expiresAt,
+      redirectUrl: paymentUrl, // ✅ Always tesoft.uk URL for merchants
+      status: updatedPayment.status,
+      externalPaymentUrl: updatedPayment.externalPaymentUrl, // Original gateway URL (for internal use)
+      customerEmail: updatedPayment.customerEmail,
+      customerName: updatedPayment.customerName,
+      country: updatedPayment.country,
+      language: updatedPayment.language,
+      amountIsEditable: updatedPayment.amountIsEditable,
+      maxPayments: updatedPayment.maxPayments,
+      customer: updatedPayment.rapydCustomer,
+      whiteUrl: updatedPayment.whiteUrl, // ✅ НОВОЕ: Возвращаем whiteUrl
+      createdAt: updatedPayment.createdAt,
+      updatedAt: updatedPayment.updatedAt,
+      shop: updatedPayment.shop,
     };
   }
 
@@ -943,7 +1141,117 @@ export class ShopService {
     });
   }
 
-  // Payout management - Updated to return shop payout stats
+  // ✅ ИСПРАВЛЕНО: Новый метод для расчета статистики выплат на основе платежей
+  private async calculateShopPayoutStatsFromPayments(shopId: string): Promise<ShopPayoutStats> {
+    console.log(`📊 Calculating shop payout stats from payments for shop: ${shopId}`);
+
+    // Получаем все оплаченные платежи магазина
+    const paidPayments = await prisma.payment.findMany({
+      where: {
+        shopId,
+        status: 'PAID',
+        paidAt: { not: null },
+      },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        merchantPaid: true,
+        paidAt: true,
+        createdAt: true,
+        gateway: true,
+        shop: {
+          select: {
+            gatewaySettings: true,
+          },
+        },
+      },
+    });
+
+    console.log(`💰 Found ${paidPayments.length} paid payments for shop ${shopId}`);
+
+    let totalAmountUSDT = 0;
+    let awaitingPayoutUSDT = 0;
+
+    // Получаем настройки комиссий шлюзов
+    let gatewaySettings: Record<string, any> = {};
+    if (paidPayments.length > 0 && paidPayments[0].shop.gatewaySettings) {
+      try {
+        gatewaySettings = JSON.parse(paidPayments[0].shop.gatewaySettings);
+      } catch (error) {
+        console.error('Error parsing gateway settings:', error);
+        gatewaySettings = {};
+      }
+    }
+
+    // Конвертируем каждый платеж в USDT и считаем комиссию
+    for (const payment of paidPayments) {
+      try {
+        // Конвертируем в USDT
+        const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
+        
+        // Получаем комиссию для шлюза
+        const gatewayDisplayName = this.getGatewayDisplayName(payment.gateway);
+        const settings = gatewaySettings[gatewayDisplayName];
+        const commission = settings?.commission || 10; // По умолчанию 10%
+        
+        // Сумма после вычета комиссии (то что получит мерчант)
+        const amountAfterCommission = amountUSDT * (1 - commission / 100);
+        
+        totalAmountUSDT += amountAfterCommission;
+        
+        // Если мерчанту еще не выплачено
+        if (!payment.merchantPaid) {
+          awaitingPayoutUSDT += amountAfterCommission;
+        }
+        
+        console.log(`💰 Payment ${payment.id}: ${payment.amount} ${payment.currency} = ${amountUSDT.toFixed(2)} USDT, after ${commission}% commission = ${amountAfterCommission.toFixed(2)} USDT, merchantPaid: ${payment.merchantPaid}`);
+      } catch (error) {
+        console.error(`Error converting payment ${payment.id}:`, error);
+      }
+    }
+
+    // Получаем сумму всех выплат
+    const payouts = await prisma.payout.findMany({
+      where: { shopId },
+      select: {
+        amount: true,
+        createdAt: true,
+      },
+    });
+
+    const totalPaidOutUSDT = payouts.reduce((sum, payout) => sum + payout.amount, 0);
+
+    // Выплаты за текущий месяц
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    currentMonth.setHours(0, 0, 0, 0);
+
+    const thisMonthPayouts = payouts.filter(payout => payout.createdAt >= currentMonth);
+    const thisMonthUSDT = thisMonthPayouts.reduce((sum, payout) => sum + payout.amount, 0);
+
+    const result = {
+      availableBalance: Math.round(awaitingPayoutUSDT * 100) / 100,
+      totalPaidOut: Math.round(totalPaidOutUSDT * 100) / 100,
+      awaitingPayout: Math.round(awaitingPayoutUSDT * 100) / 100,
+      thisMonth: Math.round(thisMonthUSDT * 100) / 100,
+    };
+
+    console.log(`📊 Shop ${shopId} payout stats calculated:`, result);
+    console.log(`   💰 Total earnings (after commission): ${totalAmountUSDT.toFixed(2)} USDT`);
+    console.log(`   ⏳ Awaiting payout: ${awaitingPayoutUSDT.toFixed(2)} USDT`);
+    console.log(`   ✅ Total paid out: ${totalPaidOutUSDT.toFixed(2)} USDT`);
+    console.log(`   📅 This month: ${thisMonthUSDT.toFixed(2)} USDT`);
+
+    return result;
+  }
+
+  // ✅ ИСПРАВЛЕНО: Обновленный метод getShopPayoutStats
+  async getShopPayoutStats(shopId: string): Promise<ShopPayoutStats> {
+    return await this.calculateShopPayoutStatsFromPayments(shopId);
+  }
+
+  // Payout management routes - Updated for shop payout stats
   async getPayouts(shopId: string, filters: PayoutFilters): Promise<{
     payouts: ShopPayoutResponse[];
     pagination: {
@@ -959,11 +1267,11 @@ export class ShopService {
     const where: any = { shopId };
     
     if (status) {
-      where.status = status;
+      where.status = status.toUpperCase();
     }
     
     if (method) {
-      where.network = method; // Use network field instead of method
+      where.network = method.toLowerCase();
     }
 
     if (dateFrom || dateTo) {
@@ -982,6 +1290,16 @@ export class ShopService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          amount: true,
+          network: true,
+          status: true,
+          txid: true,
+          notes: true,
+          createdAt: true,
+          paidAt: true,
+        },
       }),
       prisma.payout.count({ where }),
     ]);
@@ -995,7 +1313,7 @@ export class ShopService {
         txid: payout.txid,
         notes: payout.notes,
         createdAt: payout.createdAt,
-        paidAt: payout.paidAt!,
+        paidAt: payout.paidAt,
       })),
       pagination: {
         page,
@@ -1006,19 +1324,21 @@ export class ShopService {
     };
   }
 
-  async getPayoutById(shopId: string, payoutId: string): Promise<PayoutResponse | null> {
+  async getPayoutById(shopId: string, payoutId: string): Promise<ShopPayoutResponse | null> {
     const payout = await prisma.payout.findFirst({
       where: {
         id: payoutId,
         shopId,
       },
-      include: {
-        shop: {
-          select: {
-            name: true,
-            username: true,
-          },
-        },
+      select: {
+        id: true,
+        amount: true,
+        network: true,
+        status: true,
+        txid: true,
+        notes: true,
+        createdAt: true,
+        paidAt: true,
       },
     });
 
@@ -1026,62 +1346,65 @@ export class ShopService {
 
     return {
       id: payout.id,
-      shopId: payout.shopId,
       amount: payout.amount,
-      method: payout.network, // Map network to method for compatibility
+      network: payout.network,
       status: payout.status,
       txid: payout.txid,
+      notes: payout.notes,
       createdAt: payout.createdAt,
       paidAt: payout.paidAt,
-      shop: payout.shop,
     };
   }
 
   async getPayoutStatistics(shopId: string, period: string): Promise<PayoutStatistics> {
-    const periodDays = this.getPeriodDays(period);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - periodDays);
+    const now = new Date();
+    let startDate: Date;
 
-    const where = {
-      shopId,
-      createdAt: {
-        gte: startDate,
-      },
-    };
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '1y':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
 
-    const [
-      totalPayouts,
-      completedPayouts,
-      pendingPayouts,
-      rejectedPayouts,
-      payoutStats,
-      payoutsByStatus,
-      payoutsByMethod,
-      recentPayouts,
-    ] = await Promise.all([
-      prisma.payout.count({ where }),
-      prisma.payout.count({ where: { ...where, status: 'COMPLETED' } }),
-      prisma.payout.count({ where: { ...where, status: 'PENDING' } }),
-      prisma.payout.count({ where: { ...where, status: 'REJECTED' } }),
-      prisma.payout.aggregate({
-        where,
-        _sum: { amount: true },
-      }),
-      prisma.payout.groupBy({
-        by: ['status'],
-        where,
-        _count: { status: true },
-      }),
-      prisma.payout.groupBy({
-        by: ['network'], // Use network instead of method
-        where,
-        _count: { network: true },
+    const [payouts, recentPayouts] = await Promise.all([
+      prisma.payout.findMany({
+        where: {
+          shopId,
+          createdAt: { gte: startDate },
+        },
+        select: {
+          id: true,
+          amount: true,
+          network: true,
+          status: true,
+          txid: true,
+          createdAt: true,
+          paidAt: true,
+        },
       }),
       prisma.payout.findMany({
         where: { shopId },
-        take: 10,
         orderBy: { createdAt: 'desc' },
-        include: {
+        take: 10,
+        select: {
+          id: true,
+          amount: true,
+          network: true,
+          status: true,
+          txid: true,
+          createdAt: true,
+          paidAt: true,
           shop: {
             select: {
               name: true,
@@ -1092,15 +1415,21 @@ export class ShopService {
       }),
     ]);
 
-    // Calculate amounts by status
-    const completedAmount = await prisma.payout.aggregate({
-      where: { ...where, status: 'COMPLETED' },
-      _sum: { amount: true },
-    });
+    const totalPayouts = payouts.length;
+    const completedPayouts = payouts.filter(p => p.status === 'COMPLETED').length;
+    const pendingPayouts = payouts.filter(p => p.status === 'PENDING').length;
+    const rejectedPayouts = payouts.filter(p => p.status === 'REJECTED').length;
 
-    const pendingAmount = await prisma.payout.aggregate({
-      where: { ...where, status: 'PENDING' },
-      _sum: { amount: true },
+    const totalAmount = payouts.reduce((sum, p) => sum + p.amount, 0);
+    const completedAmount = payouts.filter(p => p.status === 'COMPLETED').reduce((sum, p) => sum + p.amount, 0);
+    const pendingAmount = payouts.filter(p => p.status === 'PENDING').reduce((sum, p) => sum + p.amount, 0);
+
+    const payoutsByMethod: Record<string, number> = {};
+    const payoutsByStatus: Record<string, number> = {};
+
+    payouts.forEach(payout => {
+      payoutsByMethod[payout.network] = (payoutsByMethod[payout.network] || 0) + 1;
+      payoutsByStatus[payout.status] = (payoutsByStatus[payout.status] || 0) + 1;
     });
 
     return {
@@ -1108,23 +1437,17 @@ export class ShopService {
       completedPayouts,
       pendingPayouts,
       rejectedPayouts,
-      totalAmount: payoutStats._sum.amount || 0,
-      completedAmount: completedAmount._sum.amount || 0,
-      pendingAmount: pendingAmount._sum.amount || 0,
-      payoutsByStatus: payoutsByStatus.reduce((acc, item) => {
-        acc[item.status] = item._count.status;
-        return acc;
-      }, {} as Record<string, number>),
-      payoutsByMethod: payoutsByMethod.reduce((acc, item) => {
-        acc[item.network] = item._count.network; // Use network
-        return acc;
-      }, {} as Record<string, number>),
+      totalAmount,
+      completedAmount,
+      pendingAmount,
+      payoutsByMethod,
+      payoutsByStatus,
       recentPayouts: recentPayouts.map(payout => ({
         id: payout.id,
-        shopId: payout.shopId,
+        shopId,
         amount: payout.amount,
-        method: payout.network, // Map network to method
-        status: payout.status,
+        method: payout.network,
+        status: payout.status as 'PENDING' | 'COMPLETED' | 'REJECTED',
         txid: payout.txid,
         createdAt: payout.createdAt,
         paidAt: payout.paidAt,
@@ -1133,102 +1456,15 @@ export class ShopService {
     };
   }
 
-  // New method for shop payout stats with specific structure
-  async getShopPayoutStats(shopId: string): Promise<ShopPayoutStats> {
-    console.log(`📊 Calculating shop payout stats for shop: ${shopId}`);
-
-    // Get shop with gateway settings
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-      select: {
-        id: true,
-        gatewaySettings: true,
-      },
-    });
-
-    if (!shop) {
-      throw new Error('Shop not found');
-    }
-
-    // Get all paid payments for this shop
-    const allPaidPayments = await prisma.payment.findMany({
-      where: {
-        shopId,
-        status: 'PAID',
-      },
-      select: {
-        id: true,
-        amount: true,
-        currency: true,
-        gateway: true,
-        paidAt: true,
-        merchantPaid: true,
-        createdAt: true,
-      },
-    });
-
-    console.log(`💰 Found ${allPaidPayments.length} paid payments for analysis`);
-
-    // Calculate current month boundaries
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    let totalPaidOutUSDT = 0;
-    let awaitingPayoutUSDT = 0;
-    let thisMonthUSDT = 0;
-    let availableBalanceUSDT = 0;
-
-    // Process each payment
-    for (const payment of allPaidPayments) {
-      // Convert amount to USDT
-      const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
-      
-      // Get gateway-specific settings
-      const gatewayConfig = this.getGatewaySettings(shop, payment.gateway);
-      const amountAfterCommission = this.calculateAmountAfterCommission(amountUSDT, gatewayConfig.commission);
-
-      // Total Paid Out: все выплаченные мерчанту транзакции (merchant_paid = true)
-      if (payment.merchantPaid) {
-        totalPaidOutUSDT += amountAfterCommission;
-
-        // This Month: выплаты в текущем месяце
-        if (payment.paidAt && payment.paidAt >= startOfMonth) {
-          thisMonthUSDT += amountAfterCommission;
-        }
-      }
-
-      // Awaiting Payout: eligible for payout (не выплачено + прошла задержка)
-      if (this.isEligibleForPayout(payment, gatewayConfig)) {
-        awaitingPayoutUSDT += amountAfterCommission;
-        availableBalanceUSDT += amountUSDT; // Без вычета комиссии для Available Balance
-      }
-    }
-
-    const stats: ShopPayoutStats = {
-      availableBalance: Math.round(availableBalanceUSDT * 100) / 100,
-      totalPaidOut: Math.round(totalPaidOutUSDT * 100) / 100,
-      awaitingPayout: Math.round(awaitingPayoutUSDT * 100) / 100,
-      thisMonth: Math.round(thisMonthUSDT * 100) / 100,
-    };
-
-    console.log('✅ Shop payout statistics calculated:');
-    console.log(`💰 Available Balance: ${stats.availableBalance} USDT`);
-    console.log(`💸 Total Paid Out: ${stats.totalPaidOut} USDT`);
-    console.log(`⏳ Awaiting Payout: ${stats.awaitingPayout} USDT`);
-    console.log(`📅 This Month: ${stats.thisMonth} USDT`);
-
-    return stats;
-  }
-
   // Legacy method for backward compatibility
   async getPayoutStats(shopId: string): Promise<PayoutStats> {
-    const shopStats = await this.getShopPayoutStats(shopId);
+    const stats = await this.getShopPayoutStats(shopId);
     
     return {
-      totalBalance: shopStats.availableBalance,
-      totalPaidOut: shopStats.totalPaidOut,
-      awaitingPayout: shopStats.awaitingPayout,
-      thisMonth: shopStats.thisMonth,
+      totalBalance: stats.availableBalance,
+      totalPaidOut: stats.totalPaidOut,
+      awaitingPayout: stats.awaitingPayout,
+      thisMonth: stats.thisMonth,
     };
   }
 
@@ -1257,7 +1493,15 @@ export class ShopService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          paymentId: true,
+          shopId: true,
+          event: true,
+          statusCode: true,
+          retryCount: true,
+          responseBody: true,
+          createdAt: true,
           payment: {
             select: {
               id: true,
@@ -1291,277 +1535,149 @@ export class ShopService {
     };
   }
 
-  // Statistics with time series data and USDT conversion - FIXED totalAmount calculation
+  // Statistics
   async getStatistics(shopId: string, period: string): Promise<{
     totalPayments: number;
     successfulPayments: number;
-    totalAmount: number; // Now shows only PAID payments with commission deducted in USDT
-    averageAmount: number; // Now in USDT
-    paymentsByStatus: Record<string, number>;
+    failedPayments: number;
+    totalRevenue: number;
+    conversionRate: number;
+    averageOrderValue: number;
+    recentPayments: any[];
     paymentsByGateway: Record<string, number>;
-    recentPayments: PaymentResponse[];
-    dailyRevenue: Array<{ date: string; amount: number }>; // Now in USDT
-    dailyPayments: Array<{ date: string; count: number }>;
+    paymentsByStatus: Record<string, number>;
+    dailyStats: Array<{
+      date: string;
+      payments: number;
+      revenue: number;
+    }>;
   }> {
-    const periodDays = this.getPeriodDays(period);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - periodDays);
+    const now = new Date();
+    let startDate: Date;
 
-    console.log(`📊 Generating shop statistics for period: ${period} (${periodDays} days)`);
-
-    const where = {
-      shopId,
-      createdAt: {
-        gte: startDate,
-      },
-    };
-
-    // Get shop with gateway settings for commission calculation
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-      select: {
-        id: true,
-        gatewaySettings: true,
-      },
-    });
-
-    if (!shop) {
-      throw new Error('Shop not found');
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '1y':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     }
 
-    const [
-      totalPayments,
-      successfulPayments,
-      allPayments, // Get all payments with amounts and currencies
-      paidPayments, // Get only PAID payments for totalAmount calculation
-      paymentsByStatus,
-      paymentsByGateway,
-      recentPayments,
-      dailyStats,
-    ] = await Promise.all([
-      prisma.payment.count({ where }),
-      prisma.payment.count({ where: { ...where, status: 'PAID' } }),
+    const [payments, recentPayments] = await Promise.all([
       prisma.payment.findMany({
-        where,
+        where: {
+          shopId,
+          createdAt: { gte: startDate },
+        },
         select: {
+          id: true,
+          gateway: true,
           amount: true,
           currency: true,
           status: true,
+          createdAt: true,
         },
-      }),
-      // NEW: Get only PAID payments for totalAmount calculation
-      prisma.payment.findMany({
-        where: {
-          ...where,
-          status: 'PAID',
-        },
-        select: {
-          amount: true,
-          currency: true,
-          gateway: true,
-        },
-      }),
-      prisma.payment.groupBy({
-        by: ['status'],
-        where,
-        _count: { status: true },
-      }),
-      prisma.payment.groupBy({
-        by: ['gateway'],
-        where,
-        _count: { gateway: true },
       }),
       prisma.payment.findMany({
         where: { shopId },
-        take: 10,
         orderBy: { createdAt: 'desc' },
-        include: {
-          shop: {
-            select: {
-              name: true,
-              username: true,
-            },
-          },
+        take: 10,
+        select: {
+          id: true,
+          gateway: true,
+          amount: true,
+          currency: true,
+          status: true,
+          customerEmail: true,
+          customerName: true,
+          createdAt: true,
         },
       }),
-      // Get daily statistics for time series data
-      await prisma.$queryRaw`
-        SELECT 
-          DATE(created_at) as date,
-          COUNT(*)::int as count,
-          array_agg(
-            json_build_object(
-              'amount', amount,
-              'currency', currency,
-              'status', status,
-              'gateway', gateway
-            )
-          ) as payments
-        FROM payments 
-        WHERE shop_id = ${shopId} 
-          AND created_at >= ${startDate}
-        GROUP BY DATE(created_at)
-        ORDER BY date ASC
-      ` as Array<{ 
-        date: Date; 
-        count: number; 
-        payments: Array<{ amount: number; currency: string; status: string; gateway: string }> 
-      }>,
     ]);
 
-    console.log(`💰 Found ${paidPayments.length} PAID payments for totalAmount calculation`);
+    const totalPayments = payments.length;
+    const successfulPayments = payments.filter(p => p.status === 'PAID').length;
+    const failedPayments = payments.filter(p => p.status === 'FAILED').length;
 
-    // Convert only PAID payments to USDT and apply commission
-    const paidPaymentsInUSDT = await Promise.all(
-      paidPayments.map(async (payment) => {
+    // Calculate total revenue in USDT
+    let totalRevenue = 0;
+    for (const payment of payments.filter(p => p.status === 'PAID')) {
+      try {
         const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
-        
-        // Get gateway-specific commission
-        const gatewayConfig = this.getGatewaySettings(shop, payment.gateway);
-        const amountAfterCommission = this.calculateAmountAfterCommission(usdtAmount, gatewayConfig.commission);
-        
-        return amountAfterCommission;
-      })
-    );
+        totalRevenue += usdtAmount;
+      } catch (error) {
+        console.error(`Error converting payment ${payment.id} to USDT:`, error);
+      }
+    }
 
-    // Convert all payments to USDT for average calculation
-    const allPaymentsInUSDT = await Promise.all(
-      allPayments.map(async (payment) => {
-        const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
-        return {
-          amount: usdtAmount,
-          status: payment.status,
-        };
-      })
-    );
+    const conversionRate = totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0;
+    const averageOrderValue = successfulPayments > 0 ? totalRevenue / successfulPayments : 0;
 
-    // Calculate totals in USDT
-    const totalAmountUSDT = paidPaymentsInUSDT.reduce((sum, amount) => sum + amount, 0); // Only PAID payments with commission
-    const averageAmountUSDT = totalPayments > 0 ? allPaymentsInUSDT.reduce((sum, payment) => sum + payment.amount, 0) / totalPayments : 0;
+    const paymentsByGateway: Record<string, number> = {};
+    const paymentsByStatus: Record<string, number> = {};
 
-    console.log(`💵 Total amount (PAID with commission): ${totalAmountUSDT.toFixed(2)} USDT`);
-    console.log(`📈 Average payment: ${averageAmountUSDT.toFixed(2)} USDT`);
+    payments.forEach(payment => {
+      const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
+      paymentsByGateway[gatewayId] = (paymentsByGateway[gatewayId] || 0) + 1;
+      paymentsByStatus[payment.status] = (paymentsByStatus[payment.status] || 0) + 1;
+    });
 
-    // Generate complete date range for the period
-    const dateRange = this.generateDateRange(startDate, new Date());
-    
-    // Process daily stats and convert to USDT
-    const dailyStatsProcessed = await Promise.all(
-      dailyStats.map(async (stat) => {
-        const dailyPaidPayments = stat.payments.filter(payment => payment.status === 'PAID');
-        
-        const dailyPaymentsUSDT = await Promise.all(
-          dailyPaidPayments.map(async (payment) => {
-            const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
-            
-            // Apply gateway-specific commission
-            const gatewayConfig = this.getGatewaySettings(shop, payment.gateway);
-            const amountAfterCommission = this.calculateAmountAfterCommission(usdtAmount, gatewayConfig.commission);
-            
-            return amountAfterCommission;
-          })
-        );
+    // Generate daily stats
+    const dailyStats: Array<{ date: string; payments: number; revenue: number }> = [];
+    const days = Math.ceil((now.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
 
-        const dailyRevenueUSDT = dailyPaymentsUSDT.reduce((sum, amount) => sum + amount, 0);
+    for (let i = 0; i < days; i++) {
+      const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const dayPayments = payments.filter(p => {
+        const paymentDate = p.createdAt.toISOString().split('T')[0];
+        return paymentDate === dateStr;
+      });
 
-        return {
-          date: stat.date.toISOString().split('T')[0],
-          count: stat.count,
-          revenue: dailyRevenueUSDT,
-        };
-      })
-    );
+      let dayRevenue = 0;
+      for (const payment of dayPayments.filter(p => p.status === 'PAID')) {
+        try {
+          const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
+          dayRevenue += usdtAmount;
+        } catch (error) {
+          console.error(`Error converting payment ${payment.id} to USDT:`, error);
+        }
+      }
 
-    // Create maps for quick lookup
-    const dailyStatsMap = new Map(
-      dailyStatsProcessed.map(stat => [
-        stat.date,
-        { count: stat.count, revenue: stat.revenue }
-      ])
-    );
-
-    // Fill in missing dates with zero values
-    const dailyRevenue = dateRange.map(date => ({
-      date,
-      amount: dailyStatsMap.get(date)?.revenue || 0,
-    }));
-
-    const dailyPayments = dateRange.map(date => ({
-      date,
-      count: dailyStatsMap.get(date)?.count || 0,
-    }));
-
-    console.log(`✅ Shop statistics generated successfully`);
-    console.log(`💳 Total payments: ${totalPayments}`);
-    console.log(`✅ Successful payments: ${successfulPayments}`);
-    console.log(`📊 Daily revenue entries: ${dailyRevenue.length}`);
+      dailyStats.push({
+        date: dateStr,
+        payments: dayPayments.length,
+        revenue: Math.round(dayRevenue * 100) / 100,
+      });
+    }
 
     return {
       totalPayments,
       successfulPayments,
-      totalAmount: Math.round(totalAmountUSDT * 100) / 100, // Only PAID payments with commission deducted
-      averageAmount: Math.round(averageAmountUSDT * 100) / 100,
-      paymentsByStatus: paymentsByStatus.reduce((acc, item) => {
-        acc[item.status] = item._count.status;
-        return acc;
-      }, {} as Record<string, number>),
-      paymentsByGateway: paymentsByGateway.reduce((acc, item) => {
-        acc[item.gateway] = item._count.gateway;
-        return acc;
-      }, {} as Record<string, number>),
+      failedPayments,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      conversionRate: Math.round(conversionRate * 100) / 100,
+      averageOrderValue: Math.round(averageOrderValue * 100) / 100,
       recentPayments: recentPayments.map(payment => {
-        // ✅ Return tesoft.uk/gateway/payment.php?id= URL instead of external gateway URL
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
-
+        const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
         return {
-          id: payment.id,
-          shopId: payment.shopId,
-          gateway: payment.gateway,
-          amount: payment.amount,
-          currency: payment.currency,
-          sourceCurrency: payment.sourceCurrency,
-          usage: payment.usage,
-          expiresAt: payment.expiresAt,
-          redirectUrl: paymentUrl, // ✅ Return tesoft.uk/gateway/payment.php?id= URL
-          status: payment.status,
-          externalPaymentUrl: payment.externalPaymentUrl, // Original gateway URL (for internal use)
-          customerEmail: payment.customerEmail,
-          customerName: payment.customerName,
-          // New Rapyd fields
-          country: payment.country,
-          language: payment.language,
-          amountIsEditable: payment.amountIsEditable,
-          maxPayments: payment.maxPayments,
-          customer: payment.rapydCustomer,
-          createdAt: payment.createdAt,
-          updatedAt: payment.updatedAt,
-          shop: payment.shop,
+          ...payment,
+          gateway: gatewayId,
         };
       }),
-      dailyRevenue,
-      dailyPayments,
+      paymentsByGateway,
+      paymentsByStatus,
+      dailyStats,
     };
-  }
-
-  private getPeriodDays(period: string): number {
-    switch (period) {
-      case '7d': return 7;
-      case '30d': return 30;
-      case '90d': return 90;
-      case '1y': return 365;
-      default: return 30;
-    }
-  }
-
-  private generateDateRange(startDate: Date, endDate: Date): string[] {
-    const dates: string[] = [];
-    const currentDate = new Date(startDate);
-    
-    while (currentDate <= endDate) {
-      dates.push(currentDate.toISOString().split('T')[0]);
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    
-    return dates;
   }
 }
