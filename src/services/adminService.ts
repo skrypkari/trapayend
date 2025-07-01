@@ -1005,6 +1005,8 @@ export class AdminService {
         createdAt: payment.createdAt,
         updatedAt: payment.updatedAt,
         paidAt: payment.paidAt,
+        failureMessage: payment.failureMessage,
+        txUrls: payment.txUrls,
       })),
       pagination: {
         page,
