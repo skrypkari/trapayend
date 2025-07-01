@@ -92,7 +92,7 @@ export class NodaService {
     // Use tesoft.uk URLs
     const finalWebhookUrl = `https://tesoft.uk/gateway/noda/webhook/`;
     // ✅ ОБНОВЛЕНО: Используем pending.php для Noda return URL
-    const finalReturnUrl = returnUrl || `https://tesoft.uk/gateway/pending.php?id=${orderId}`;
+    const finalReturnUrl = `https://tesoft.uk/gateway/pending.php?id=${orderId}`;
 
     // Prepare request body for Noda Payment Link - ПРЯМОЙ JSON БЕЗ ОБЕРТКИ
     const requestBody: any = {

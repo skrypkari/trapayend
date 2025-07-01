@@ -779,6 +779,8 @@ export class PaymentService {
     if (payment.txUrls) {
       try {
         txUrls = JSON.parse(payment.txUrls);
+        //@ts-ignore
+        // ✅ НОВОЕ: Логируем количество tx_urls
         console.log(`   - Transaction URLs: ${txUrls.length} URLs found`);
       } catch (error) {
         console.error('Error parsing tx_urls:', error);
