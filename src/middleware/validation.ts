@@ -277,12 +277,41 @@ export const updatePaymentStatusSchema = Joi.object({
   }),
 });
 
-// Payout validation schemas
+// ✅ ОБНОВЛЕНО: Payout validation schema с периодом выплаты
 export const createPayoutSchema = Joi.object({
   shopId: Joi.string().min(1).max(100).required(),
   amount: Joi.number().positive().required(),
   network: Joi.string().valid(...ALLOWED_NETWORKS).required(),
   notes: Joi.string().max(500).optional(),
+  periodFrom: Joi.date().iso().optional(), // ✅ НОВОЕ: Начало периода выплаты
+  periodTo: Joi.date().iso().optional(),   // ✅ НОВОЕ: Конец периода выплаты
+}).custom((value, helpers) => {
+  // ✅ НОВОЕ: Валидация периода выплаты
+  if (value.periodFrom && value.periodTo) {
+    const fromDate = new Date(value.periodFrom);
+    const toDate = new Date(value.periodTo);
+    
+    if (fromDate >= toDate) {
+      return helpers.error('any.invalid', { 
+        message: 'Period start date must be before end date' 
+      });
+    }
+    
+    if (toDate > new Date()) {
+      return helpers.error('any.invalid', { 
+        message: 'Period end date cannot be in the future' 
+      });
+    }
+  }
+  
+  // Если указан только один из периодов, это ошибка
+  if ((value.periodFrom && !value.periodTo) || (!value.periodFrom && value.periodTo)) {
+    return helpers.error('any.invalid', { 
+      message: 'Both periodFrom and periodTo must be provided together or not at all' 
+    });
+  }
+  
+  return value;
 });
 
 // ✅ ОБНОВЛЕНО: Payment Link validation schemas с type вместо maxPayments

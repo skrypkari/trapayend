@@ -56,14 +56,17 @@ export interface MerchantsAwaitingPayoutFilters {
   search?: string;    // Поиск по имени или username
 }
 
-// New interfaces for payout management
+// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты
 export interface CreatePayoutRequest {
   shopId: string;
   amount: number;
   network: string;
   notes?: string;
+  periodFrom?: string; // ✅ НОВОЕ: Начало периода выплаты (ISO date string)
+  periodTo?: string;   // ✅ НОВОЕ: Конец периода выплаты (ISO date string)
 }
 
+// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты
 export interface PayoutResponse {
   id: string;
   shopId: string;
@@ -74,6 +77,8 @@ export interface PayoutResponse {
   status: string;
   txid?: string | null;
   notes?: string | null;
+  periodFrom?: Date | null; // ✅ НОВОЕ: Начало периода выплаты
+  periodTo?: Date | null;   // ✅ НОВОЕ: Конец периода выплаты
   createdAt: Date;
   paidAt: Date;
 }

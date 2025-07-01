@@ -212,15 +212,18 @@ model Payment {
 }
 
 model Payout {
-  id        String       @id @default(cuid())
-  shopId    String       @map("shop_id")
-  amount    Float
-  network   String       // Network type (e.g., "polygon", "trc20", "erc20")
-  status    PayoutStatus @default(COMPLETED) // Always COMPLETED for admin-created payouts
-  txid      String?
-  notes     String?      @db.Text // Optional notes from admin
-  createdAt DateTime     @default(now()) @map("created_at")
-  paidAt    DateTime     @default(now()) @map("paid_at") // Set to creation time for admin payouts
+  id         String       @id @default(cuid())
+  shopId     String       @map("shop_id")
+  amount     Float
+  network    String       // Network type (e.g., "polygon", "trc20", "erc20")
+  status     PayoutStatus @default(COMPLETED) // Always COMPLETED for admin-created payouts
+  txid       String?
+  notes      String?      @db.Text // Optional notes from admin
+  // ✅ НОВОЕ: Поля для периода выплаты
+  periodFrom DateTime?    @map("period_from") // ✅ НОВОЕ: Начало периода выплаты
+  periodTo   DateTime?    @map("period_to")   // ✅ НОВОЕ: Конец периода выплаты
+  createdAt  DateTime     @default(now()) @map("created_at")
+  paidAt     DateTime     @default(now()) @map("paid_at") // Set to creation time for admin payouts
 
   // Relations
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
