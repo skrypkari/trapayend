@@ -44,6 +44,12 @@ enum PaymentLinkStatus {
   COMPLETED
 }
 
+// ✅ ДОБАВЛЕНО: Новый enum для типа payment link
+enum PaymentLinkType {
+  SINGLE  // Одноразовая ссылка
+  MULTI   // Многоразовая ссылка
+}
+
 model Shop {
   id              String     @id @default(cuid())
   name            String
@@ -81,8 +87,9 @@ model PaymentLink {
   currency        String            @default("USD")
   sourceCurrency  String?           @map("source_currency") // For Plisio (crypto currency)
   gateway         String            // Gateway name (plisio, rapyd, noda)
-  maxPayments     Int               @default(1) @map("max_payments")
-  currentPayments Int               @default(0) @map("current_payments")
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments и currentPayments на type
+  type            PaymentLinkType   @default(SINGLE) // ✅ НОВОЕ: Тип ссылки (SINGLE/MULTI)
+  currentPayments Int               @default(0) @map("current_payments") // ✅ ОСТАВЛЕНО: Для подсчета использований
   status          PaymentLinkStatus @default(ACTIVE)
   expiresAt       DateTime?         @map("expires_at")
   // ✅ НОВОЕ: Три типа URL для payment links

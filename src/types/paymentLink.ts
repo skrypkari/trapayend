@@ -3,7 +3,8 @@ export interface CreatePaymentLinkRequest {
   currency?: string;
   sourceCurrency?: string; // For Plisio (crypto currency)
   gateway: string; // Gateway ID (0001, 0010, 1000)
-  maxPayments?: number;
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments на type
+  type?: 'SINGLE' | 'MULTI'; // ✅ НОВОЕ: Тип ссылки (по умолчанию SINGLE)
   expiresAt?: string; // ISO date string
   // ✅ НОВОЕ: Три типа URL для payment links
   successUrl?: string;
@@ -25,8 +26,9 @@ export interface PaymentLinkResponse {
   currency: string;
   sourceCurrency?: string;
   gateway: string;
-  maxPayments: number;
-  currentPayments: number;
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments на type
+  type: 'SINGLE' | 'MULTI'; // ✅ НОВОЕ: Тип ссылки
+  currentPayments: number; // ✅ ОСТАВЛЕНО: Для подсчета использований
   status: string;
   expiresAt?: Date;
   // ✅ НОВОЕ: Три типа URL
@@ -84,14 +86,16 @@ export interface PublicPaymentLinkData {
   currency: string;
   sourceCurrency?: string;
   gateway: string;
-  maxPayments: number;
-  currentPayments: number;
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments на type
+  type: 'SINGLE' | 'MULTI'; // ✅ НОВОЕ: Тип ссылки
+  currentPayments: number; // ✅ ОСТАВЛЕНО: Для подсчета использований
   status: string;
   expiresAt?: Date;
   // Shop branding
   shopName: string;
   // Availability
   isAvailable: boolean;
+  // ✅ ИЗМЕНЕНО: Для SINGLE ссылок remainingPayments всегда 1 или 0
   remainingPayments: number;
 }
 

@@ -252,6 +252,10 @@ export class PaymentLinkService {
 
     this.validateKlymeCurrency(gatewayName, finalCurrency);
 
+    // ✅ ИЗМЕНЕНО: Используем type вместо maxPayments
+    const linkType = linkData.type || 'SINGLE';
+    console.log(`🔗 Creating ${linkType} payment link`);
+
     const paymentLink = await prisma.paymentLink.create({
       data: {
         shopId,
@@ -259,7 +263,8 @@ export class PaymentLinkService {
         currency: finalCurrency,
         sourceCurrency: linkData.sourceCurrency || undefined,
         gateway: gatewayName,
-        maxPayments: linkData.maxPayments || 1,
+        // ✅ ИЗМЕНЕНО: Используем type вместо maxPayments
+        type: linkType,
         currentPayments: 0,
         status: 'ACTIVE',
         expiresAt: linkData.expiresAt ? new Date(linkData.expiresAt) : undefined,
@@ -281,6 +286,7 @@ export class PaymentLinkService {
 
     console.log(`✅ Payment link created: ${paymentLink.id} (${gatewayName})`);
     console.log(`💰 Fixed amount: ${paymentLink.amount} ${paymentLink.currency}`);
+    console.log(`🔗 Link type: ${paymentLink.type}`);
     console.log(`🔗 Link URL: https://app.trapay.uk/link/${paymentLink.id}`);
     console.log(`📝 Note: Success/Fail/Pending URLs will be generated when payment is created`);
 
@@ -493,12 +499,16 @@ export class PaymentLinkService {
     if (!link) return null;
 
     const isExpired = link.expiresAt && link.expiresAt < new Date();
-    const isCompleted = link.currentPayments >= link.maxPayments;
+    // ✅ ИЗМЕНЕНО: Для SINGLE ссылок проверяем, была ли уже одна оплата
+    const isCompleted = link.type === 'SINGLE' ? link.currentPayments >= 1 : false;
     const isShopActive = link.shop.status === 'ACTIVE';
     const isLinkActive = link.status === 'ACTIVE';
 
     const isAvailable = !isExpired && !isCompleted && isShopActive && isLinkActive;
-    const remainingPayments = Math.max(0, link.maxPayments - link.currentPayments);
+    // ✅ ИЗМЕНЕНО: Для SINGLE ссылок remainingPayments всегда 1 или 0
+    const remainingPayments = link.type === 'SINGLE' 
+      ? (link.currentPayments >= 1 ? 0 : 1)
+      : Number.MAX_SAFE_INTEGER; // Для MULTI ссылок нет лимита
 
     return {
       id: link.id,
@@ -506,7 +516,8 @@ export class PaymentLinkService {
       currency: link.currency,
       sourceCurrency: link.sourceCurrency || undefined,
       gateway: link.gateway,
-      maxPayments: link.maxPayments,
+      // ✅ ИЗМЕНЕНО: Возвращаем type вместо maxPayments
+      type: link.type,
       currentPayments: link.currentPayments,
       status: link.status,
       expiresAt: link.expiresAt || undefined,
@@ -538,7 +549,8 @@ export class PaymentLinkService {
     }
 
     const isExpired = link.expiresAt && link.expiresAt < new Date();
-    const isCompleted = link.currentPayments >= link.maxPayments;
+    // ✅ ИЗМЕНЕНО: Для SINGLE ссылок проверяем, была ли уже одна оплата
+    const isCompleted = link.type === 'SINGLE' ? link.currentPayments >= 1 : false;
     const isShopActive = link.shop.status === 'ACTIVE';
     const isLinkActive = link.status === 'ACTIVE';
 
@@ -547,7 +559,10 @@ export class PaymentLinkService {
     }
 
     if (isCompleted) {
-      throw new Error('Payment link has reached maximum payments');
+      const message = link.type === 'SINGLE' 
+        ? 'This single-use payment link has already been used'
+        : 'Payment link has reached maximum payments';
+      throw new Error(message);
     }
 
     if (!isShopActive) {
@@ -562,7 +577,7 @@ export class PaymentLinkService {
 
     const paymentAmount = link.amount;
 
-    console.log(`💳 Initiating payment from link ${linkId}: ${paymentAmount} ${link.currency}`);
+    console.log(`💳 Initiating payment from ${link.type} link ${linkId}: ${paymentAmount} ${link.currency}`);
     console.log(`👤 Customer: ${customerName || 'Anonymous'} (${customerEmail || 'no email'})`);
 
     this.validateKlymeCurrency(link.gateway, link.currency);
@@ -876,8 +891,8 @@ export class PaymentLinkService {
           where: { id: payment.paymentLinkId! },
           select: {
             id: true,
+            type: true,
             currentPayments: true,
-            maxPayments: true,
             status: true,
           },
         });
@@ -886,8 +901,9 @@ export class PaymentLinkService {
           throw new Error(`Payment link ${payment.paymentLinkId} not found`);
         }
 
-        if (currentLink.currentPayments >= currentLink.maxPayments) {
-          console.log(`📈 Payment link ${payment.paymentLinkId} already at max payments (${currentLink.currentPayments}/${currentLink.maxPayments}), skipping increment`);
+        // ✅ ИЗМЕНЕНО: Для SINGLE ссылок проверяем, не превышен ли лимит в 1 платеж
+        if (currentLink.type === 'SINGLE' && currentLink.currentPayments >= 1) {
+          console.log(`📈 Single payment link ${payment.paymentLinkId} already used (${currentLink.currentPayments} payments), skipping increment`);
           return currentLink;
         }
 
@@ -902,21 +918,27 @@ export class PaymentLinkService {
 
         const expectedCurrentPayments = existingSuccessfulPayments + 1;
 
+        // ✅ ИЗМЕНЕНО: Для SINGLE ссылок автоматически помечаем как COMPLETED после первой оплаты
+        const newStatus = currentLink.type === 'SINGLE' && expectedCurrentPayments >= 1 
+          ? 'COMPLETED' 
+          : currentLink.status;
+
         const updatedLink = await tx.paymentLink.update({
           where: { id: payment.paymentLinkId! },
           data: {
             currentPayments: expectedCurrentPayments,
-            status: expectedCurrentPayments >= currentLink.maxPayments ? 'COMPLETED' : currentLink.status,
+            status: newStatus,
           },
         });
 
-        console.log(`📈 Payment link ${payment.paymentLinkId} counter updated: ${currentLink.currentPayments} -> ${expectedCurrentPayments}/${currentLink.maxPayments}`);
+        console.log(`📈 Payment link ${payment.paymentLinkId} (${currentLink.type}) counter updated: ${currentLink.currentPayments} -> ${expectedCurrentPayments}`);
 
         return updatedLink;
       });
 
       if (result.status === 'COMPLETED') {
-        console.log(`🏁 Payment link ${payment.paymentLinkId} completed (reached max payments: ${result.currentPayments}/${result.maxPayments})`);
+        const linkType = result.type === 'SINGLE' ? 'single-use' : 'multi-use';
+        console.log(`🏁 Payment link ${payment.paymentLinkId} completed (${linkType} link with ${result.currentPayments} payments)`);
       }
 
     } catch (error) {
@@ -984,7 +1006,8 @@ export class PaymentLinkService {
       currency: link.currency,
       sourceCurrency: link.sourceCurrency || undefined,
       gateway: link.gateway,
-      maxPayments: link.maxPayments,
+      // ✅ ИЗМЕНЕНО: Возвращаем type вместо maxPayments
+      type: link.type,
       currentPayments: link.currentPayments,
       status: link.status,
       expiresAt: link.expiresAt || undefined,

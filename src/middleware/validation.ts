@@ -285,16 +285,18 @@ export const createPayoutSchema = Joi.object({
   notes: Joi.string().max(500).optional(),
 });
 
-// Payment Link validation schemas
+// ✅ ОБНОВЛЕНО: Payment Link validation schemas с type вместо maxPayments
 export const createPaymentLinkSchema = Joi.object({
   amount: Joi.number().positive().required(),
   currency: Joi.string().valid(...ALLOWED_CURRENCIES).insensitive().optional().default('USD'),
   sourceCurrency: Joi.string().valid(...ALLOWED_SOURCE_CURRENCIES).insensitive().optional(), // For Plisio
   gateway: gatewayIdValidator.required(), // Gateway ID
-  maxPayments: Joi.number().integer().min(1).max(1000).optional().default(1),
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments на type
+  type: Joi.string().valid('SINGLE', 'MULTI').optional().default('SINGLE'), // ✅ НОВОЕ: Тип ссылки
   expiresAt: Joi.date().iso().greater('now').optional(),
   successUrl: Joi.string().uri().optional(),
   failUrl: Joi.string().uri().optional(),
+  pendingUrl: Joi.string().uri().optional(), // ✅ НОВОЕ: URL для ожидания
   // Rapyd specific fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional().default('EN'),
@@ -305,10 +307,12 @@ export const updatePaymentLinkSchema = Joi.object({
   currency: Joi.string().valid(...ALLOWED_CURRENCIES).insensitive().optional(),
   sourceCurrency: Joi.string().valid(...ALLOWED_SOURCE_CURRENCIES).insensitive().optional(),
   gateway: gatewayIdValidator.optional(),
-  maxPayments: Joi.number().integer().min(1).max(1000).optional(),
+  // ✅ ИЗМЕНЕНО: Заменили maxPayments на type
+  type: Joi.string().valid('SINGLE', 'MULTI').optional(), // ✅ НОВОЕ: Тип ссылки
   expiresAt: Joi.date().iso().greater('now').optional().allow(null),
   successUrl: Joi.string().uri().optional().allow(''),
   failUrl: Joi.string().uri().optional().allow(''),
+  pendingUrl: Joi.string().uri().optional().allow(''), // ✅ НОВОЕ: URL для ожидания
   // Rapyd specific fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
