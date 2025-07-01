@@ -6,7 +6,7 @@ import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
 import { telegramBotService } from './telegramBotService';
-import { coinToPayStatusService } from './coinToPayStatusService'; // ✅ ДОБАВЛЕНО
+import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 
 export class PaymentService {
@@ -56,22 +56,22 @@ export class PaymentService {
     return gatewayOrderId;
   }
 
-  // ✅ ОБНОВЛЕНО: Updated generateGatewayUrls with three URL types and gatewayOrderId parameter
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk
   private generateGatewayUrls(
     gatewayName: string, 
     paymentId: string, 
-    gatewayOrderId: string, // ✅ НОВОЕ: Добавлен gatewayOrderId
+    gatewayOrderId: string,
     baseUrl: string, 
     successUrl?: string, 
     failUrl?: string,
-    pendingUrl?: string // ✅ НОВОЕ: Добавлен pendingUrl
+    pendingUrl?: string
   ): {
     finalSuccessUrl: string;
     finalFailUrl: string;
-    finalPendingUrl: string; // ✅ НОВОЕ
+    finalPendingUrl: string;
     dbSuccessUrl: string;
     dbFailUrl: string;
-    dbPendingUrl: string; // ✅ НОВОЕ
+    dbPendingUrl: string;
   } {
     // ✅ НОВОЕ: Если все URL переданы мерчантом, используем их
     if (successUrl && failUrl && pendingUrl) {
@@ -85,16 +85,17 @@ export class PaymentService {
       };
     }
 
-    // ✅ ОБНОВЛЕНО: Генерируем URL с payment_id параметром
+    // ✅ ОБНОВЛЕНО: Везде используем app.trapay.uk с payment_id параметром
     const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
     const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
     const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
 
+    // ✅ ОБНОВЛЕНО: Для шлюзов используем tesoft.uk только для внутренних redirect
     let finalSuccessUrl: string;
     let finalFailUrl: string;
     let finalPendingUrl: string;
 
-    // ✅ ОБНОВЛЕНО: Для KLYME, CoinToPay и Noda используем pending URL как success URL
+    // Для KLYME, CoinToPay и Noda используем pending URL как success URL
     if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
       finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
@@ -150,11 +151,9 @@ export class PaymentService {
     }
   }
 
-  // ✅ ДОБАВЛЕНО: Helper method to check if gateway is allowed for shop
   private async checkGatewayPermission(shopId: string, gatewayName: string): Promise<void> {
     console.log(`🔐 Checking gateway permission for shop ${shopId}: ${gatewayName}`);
 
-    // Get shop's configured payment gateways
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
       select: {
@@ -169,7 +168,6 @@ export class PaymentService {
       throw new Error('Shop not found');
     }
 
-    // Parse enabled gateways from JSON string
     let enabledGateways: string[] = [];
     
     if (shop.paymentGateways) {
@@ -178,21 +176,17 @@ export class PaymentService {
         console.log(`🔐 Shop ${shop.username} enabled gateways:`, enabledGateways);
       } catch (error) {
         console.error('Error parsing payment gateways:', error);
-        // Fallback to default gateways if parsing fails
         enabledGateways = ['Plisio'];
       }
     } else {
-      // Default gateway if none configured
       enabledGateways = ['Plisio'];
       console.log(`🔐 Shop ${shop.username} using default gateways:`, enabledGateways);
     }
 
-    // Map gateway name to display name for comparison
     const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
     
     console.log(`🔐 Checking if "${gatewayDisplayName}" is in enabled gateways:`, enabledGateways);
 
-    // Check if the gateway is enabled for this shop
     if (!enabledGateways.includes(gatewayDisplayName)) {
       console.error(`❌ Gateway "${gatewayDisplayName}" not allowed for shop ${shop.username}`);
       console.error(`❌ Enabled gateways: ${enabledGateways.join(', ')}`);
@@ -207,7 +201,6 @@ export class PaymentService {
     console.log(`✅ Gateway "${gatewayDisplayName}" is allowed for shop ${shop.username}`);
   }
 
-  // ✅ ДОБАВЛЕНО: Helper method to get gateway display name
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
       'plisio': 'Plisio',
@@ -239,7 +232,7 @@ export class PaymentService {
       expires_at,
       success_url,
       fail_url,
-      pending_url, // ✅ НОВОЕ: Добавлен pending_url
+      pending_url,
       customer_email,
       customer_name,
       country,
@@ -268,7 +261,7 @@ export class PaymentService {
         id: true,
         name: true,
         status: true,
-        paymentGateways: true, // ✅ ДОБАВЛЕНО: Получаем настройки шлюзов
+        paymentGateways: true,
       },
     });
 
@@ -280,7 +273,6 @@ export class PaymentService {
       throw new Error('Shop is not active');
     }
 
-    // ✅ ДОБАВЛЕНО: Проверяем разрешения на использование шлюза
     await this.checkGatewayPermission(shop.id, gatewayName);
 
     const gatewayOrderId = await this.generateGatewayOrderId();
@@ -289,7 +281,6 @@ export class PaymentService {
     const merchantOrderId = order_id || null;
     console.log(`📝 Merchant order_id: ${merchantOrderId || 'not provided'}`);
 
-    // ✅ ИСПРАВЛЕНО: Сначала создаем платеж, чтобы получить его ID
     const payment = await prisma.payment.create({
       data: {
         shopId: shop.id,
@@ -299,10 +290,9 @@ export class PaymentService {
         sourceCurrency: source_currency || null,
         usage: usage || 'ONCE',
         expiresAt: expires_at ? new Date(expires_at) : null,
-        // ✅ ВРЕМЕННО: Устанавливаем временные URL, обновим их после генерации
         successUrl: 'temp',
         failUrl: 'temp',
-        pendingUrl: 'temp', // ✅ НОВОЕ: Временный pending URL
+        pendingUrl: 'temp',
         status: 'PENDING',
         orderId: merchantOrderId,
         gatewayOrderId: gatewayOrderId,
@@ -321,7 +311,6 @@ export class PaymentService {
     console.log(`   - Merchant order_id: ${merchantOrderId || 'none'}`);
     console.log(`   - Gateway order_id: ${gatewayOrderId} (8digits-8digits)`);
 
-    // ✅ ОБНОВЛЕНО: Теперь генерируем URL с реальным ID платежа и gatewayOrderId
     const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
     const { 
       finalSuccessUrl, 
@@ -333,20 +322,19 @@ export class PaymentService {
     } = this.generateGatewayUrls(
       gatewayName, 
       payment.id, 
-      gatewayOrderId, // ✅ НОВОЕ: Передаем gatewayOrderId
+      gatewayOrderId,
       baseUrl, 
       success_url, 
       fail_url,
-      pending_url // ✅ НОВОЕ: Передаем pending_url
+      pending_url
     );
 
-    // ✅ ОБНОВЛЕНО: Обновляем платеж с правильными URL (включая pending)
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
         successUrl: dbSuccessUrl,
         failUrl: dbFailUrl,
-        pendingUrl: dbPendingUrl, // ✅ НОВОЕ: Сохраняем pending URL
+        pendingUrl: dbPendingUrl,
       },
     });
 
@@ -401,6 +389,7 @@ export class PaymentService {
           },
         });
 
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
         const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Plisio payment URL: ${paymentUrl}`);
 
@@ -443,7 +432,8 @@ export class PaymentService {
           },
         });
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Rapyd payment URL: ${paymentUrl}`);
 
         return {
@@ -464,7 +454,7 @@ export class PaymentService {
           amount,
           currency: currency || 'USD',
           webhookUrl: `https://tesoft.uk/gateways/noda/webhook`,
-          returnUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для Noda
+          returnUrl: finalPendingUrl,
           expiryDate: expires_at,
         });
 
@@ -480,7 +470,8 @@ export class PaymentService {
           },
         });
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Noda payment URL: ${paymentUrl}`);
 
         return {
@@ -512,13 +503,13 @@ export class PaymentService {
           },
         });
 
-        // ✅ ДОБАВЛЕНО: Запускаем индивидуальные проверки для CoinToPay платежа
         if (gatewayPaymentId) {
           console.log(`🪙 Scheduling individual status checks for CoinToPay payment: ${payment.id} (${gatewayPaymentId})`);
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 CoinToPay payment URL: ${paymentUrl}`);
 
         return {
@@ -544,7 +535,7 @@ export class PaymentService {
           amount,
           currency: currency || 'USD',
           region,
-          redirectUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для KLYME
+          redirectUrl: finalPendingUrl,
         });
 
         gatewayPaymentId = klymeResult.gateway_payment_id;
@@ -558,6 +549,7 @@ export class PaymentService {
           },
         });
 
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
         const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`✅ KLYME ${region} payment created successfully with gateway order_id: ${gatewayOrderId}`);
         console.log(`🔗 KLYME ${region} payment URL: ${paymentUrl}`);
@@ -583,7 +575,6 @@ export class PaymentService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to payment status response
   async getPaymentStatus(paymentId: string): Promise<PaymentStatusResponse | null> {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -597,13 +588,13 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
-        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
+        pendingUrl: true,
         customerEmail: true,
         customerName: true,
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
-        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
+        txUrls: true,
         orderId: true,
         gatewayOrderId: true,
         country: true,
@@ -616,7 +607,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
-        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
+        failureMessage: true,
         createdAt: true,
         updatedAt: true,
         expiresAt: true,
@@ -630,15 +621,9 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    let paymentUrl: string;
-    
-    if (payment.gateway === 'plisio' || payment.gateway.startsWith('klyme_')) {
-      paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
-    } else {
-      paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
-    }
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
-    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
       try {
@@ -660,13 +645,13 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
-      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
+      pending_url: payment.pendingUrl,
       customer_email: payment.customerEmail,
       customer_name: payment.customerName,
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
-      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
+      tx_urls: txUrls,
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,
       merchant_brand: payment.shop.name,
@@ -680,14 +665,13 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
-      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
+      failure_message: payment.failureMessage,
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
       expires_at: payment.expiresAt,
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Enhanced search by all possible IDs with pending_url, failure_message and tx_urls
   async getPaymentById(id: string): Promise<PaymentStatusResponse | null> {
     console.log(`🔍 Searching for payment with ID: ${id}`);
     console.log(`🔍 Will search by: internal ID, merchant order ID, gateway order ID, and gateway payment ID`);
@@ -695,10 +679,10 @@ export class PaymentService {
     const payment = await prisma.payment.findFirst({
       where: {
         OR: [
-          { id: id },                    // ✅ Our internal payment ID
-          { orderId: id },               // ✅ Merchant's order ID (can be null)
-          { gatewayOrderId: id },        // ✅ Gateway order ID (8digits-8digits format)
-          { gatewayPaymentId: id },      // ✅ Gateway payment ID (from payment gateway)
+          { id: id },
+          { orderId: id },
+          { gatewayOrderId: id },
+          { gatewayPaymentId: id },
         ],
       },
       select: {
@@ -711,13 +695,13 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
-        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
+        pendingUrl: true,
         customerEmail: true,
         customerName: true,
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
-        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
+        txUrls: true,
         orderId: true,
         gatewayOrderId: true,
         gatewayPaymentId: true,
@@ -731,7 +715,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
-        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
+        failureMessage: true,
         createdAt: true,
         updatedAt: true,
         expiresAt: true,
@@ -764,15 +748,9 @@ export class PaymentService {
       console.log(`   - Failure Message: ${payment.failureMessage}`);
     }
 
-    let paymentUrl: string;
-    
-    if (payment.gateway === 'plisio' || payment.gateway.startsWith('klyme_')) {
-      paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
-    } else {
-      paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
-    }
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
-    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
       try {
@@ -795,13 +773,13 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
-      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
+      pending_url: payment.pendingUrl,
       customer_email: payment.customerEmail,
       customer_name: payment.customerName,
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
-      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
+      tx_urls: txUrls,
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,
       merchant_brand: payment.shop.name,
@@ -810,14 +788,13 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
-      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
+      failure_message: payment.failureMessage,
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
       expires_at: payment.expiresAt,
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to shop payments list
   async getPaymentsByShop(shopId: string, filters: PaymentFilters): Promise<{
     payments: any[];
     pagination: {
@@ -864,7 +841,7 @@ export class PaymentService {
           externalPaymentUrl: true,
           successUrl: true,
           failUrl: true,
-          pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
+          pendingUrl: true,
           expiresAt: true,
           orderId: true,
           gatewayOrderId: true,
@@ -873,7 +850,7 @@ export class PaymentService {
           invoiceTotalSum: true,
           qrCode: true,
           qrUrl: true,
-          txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
+          txUrls: true,
           country: true,
           language: true,
           amountIsEditable: true,
@@ -884,7 +861,7 @@ export class PaymentService {
           bankId: true,
           remitterIban: true,
           remitterName: true,
-          failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
+          failureMessage: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -894,15 +871,9 @@ export class PaymentService {
 
     return {
       payments: payments.map(payment => {
-        let paymentUrl: string;
-        
-        if (payment.gateway === 'plisio' || payment.gateway.startsWith('klyme_')) {
-          paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
-        } else {
-          paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
-        }
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
-        // ✅ НОВОЕ: Парсим tx_urls из JSON строки
         let txUrls: string[] | null = null;
         if (payment.txUrls) {
           try {
@@ -926,7 +897,7 @@ export class PaymentService {
           external_payment_url: payment.externalPaymentUrl,
           success_url: payment.successUrl,
           fail_url: payment.failUrl,
-          pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
+          pending_url: payment.pendingUrl,
           expires_at: payment.expiresAt,
           order_id: payment.orderId,
           gateway_order_id: payment.gatewayOrderId,
@@ -935,7 +906,7 @@ export class PaymentService {
           invoice_total_sum: payment.invoiceTotalSum,
           qr_code: payment.qrCode,
           qr_url: payment.qrUrl,
-          tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
+          tx_urls: txUrls,
           country: payment.country,
           language: payment.language,
           amount_is_editable: payment.amountIsEditable,
@@ -946,7 +917,7 @@ export class PaymentService {
           bank_id: payment.bankId,
           remitter_iban: payment.remitterIban,
           remitter_name: payment.remitterName,
-          failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
+          failure_message: payment.failureMessage,
           created_at: payment.createdAt,
           updated_at: payment.updatedAt,
         };
@@ -960,7 +931,6 @@ export class PaymentService {
     };
   }
 
-  // ✅ ОБНОВЛЕНО: Added pending_url, failure_message and tx_urls to shop payment by ID
   async getPaymentByShopAndId(shopId: string, paymentId: string): Promise<any | null> {
     const payment = await prisma.payment.findFirst({
       where: {
@@ -978,7 +948,7 @@ export class PaymentService {
         externalPaymentUrl: true,
         successUrl: true,
         failUrl: true,
-        pendingUrl: true, // ✅ НОВОЕ: Добавляем pending_url
+        pendingUrl: true,
         expiresAt: true,
         orderId: true,
         gatewayOrderId: true,
@@ -988,7 +958,7 @@ export class PaymentService {
         invoiceTotalSum: true,
         qrCode: true,
         qrUrl: true,
-        txUrls: true, // ✅ НОВОЕ: Добавляем tx_urls
+        txUrls: true,
         country: true,
         language: true,
         amountIsEditable: true,
@@ -999,7 +969,7 @@ export class PaymentService {
         bankId: true,
         remitterIban: true,
         remitterName: true,
-        failureMessage: true, // ✅ НОВОЕ: Добавляем failure_message
+        failureMessage: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -1007,15 +977,9 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    let paymentUrl: string;
-    
-    if (payment.gateway === 'plisio' || payment.gateway.startsWith('klyme_')) {
-      paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
-    } else {
-      paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
-    }
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
-    // ✅ НОВОЕ: Парсим tx_urls из JSON строки
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
       try {
@@ -1039,7 +1003,7 @@ export class PaymentService {
       external_payment_url: payment.externalPaymentUrl,
       success_url: payment.successUrl,
       fail_url: payment.failUrl,
-      pending_url: payment.pendingUrl, // ✅ НОВОЕ: Возвращаем pending_url
+      pending_url: payment.pendingUrl,
       expires_at: payment.expiresAt,
       order_id: payment.orderId,
       gateway_order_id: payment.gatewayOrderId,
@@ -1049,7 +1013,7 @@ export class PaymentService {
       invoice_total_sum: payment.invoiceTotalSum,
       qr_code: payment.qrCode,
       qr_url: payment.qrUrl,
-      tx_urls: txUrls, // ✅ НОВОЕ: Возвращаем tx_urls
+      tx_urls: txUrls,
       country: payment.country,
       language: payment.language,
       amount_is_editable: payment.amountIsEditable,
@@ -1060,7 +1024,7 @@ export class PaymentService {
       bank_id: payment.bankId,
       remitter_iban: payment.remitterIban,
       remitter_name: payment.remitterName,
-      failure_message: payment.failureMessage, // ✅ НОВОЕ: Возвращаем failure_message
+      failure_message: payment.failureMessage,
       created_at: payment.createdAt,
       updated_at: payment.updatedAt,
     };

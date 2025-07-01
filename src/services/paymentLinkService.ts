@@ -14,7 +14,7 @@ import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
-import { coinToPayStatusService } from './coinToPayStatusService'; // ✅ ДОБАВЛЕНО
+import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 import { currencyService } from './currencyService';
 
@@ -41,24 +41,23 @@ export class PaymentLinkService {
     return `${generateSegment()}-${generateSegment()}`;
   }
 
-  // ✅ ОБНОВЛЕНО: Updated generateGatewayUrls with three URL types and gatewayOrderId parameter
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk
   private generateGatewayUrls(
     gatewayName: string, 
     paymentId: string, 
-    gatewayOrderId: string, // ✅ НОВОЕ: Добавлен gatewayOrderId
+    gatewayOrderId: string,
     baseUrl: string, 
     successUrl?: string, 
     failUrl?: string,
-    pendingUrl?: string // ✅ НОВОЕ: Добавлен pendingUrl
+    pendingUrl?: string
   ): {
     finalSuccessUrl: string;
     finalFailUrl: string;
-    finalPendingUrl: string; // ✅ НОВОЕ
+    finalPendingUrl: string;
     dbSuccessUrl: string;
     dbFailUrl: string;
-    dbPendingUrl: string; // ✅ НОВОЕ
+    dbPendingUrl: string;
   } {
-    // ✅ НОВОЕ: Если все URL переданы мерчантом, используем их
     if (successUrl && failUrl && pendingUrl) {
       return {
         finalSuccessUrl: successUrl,
@@ -70,7 +69,7 @@ export class PaymentLinkService {
       };
     }
 
-    // ✅ ОБНОВЛЕНО: Генерируем URL с payment_id параметром
+    // ✅ ОБНОВЛЕНО: Везде используем app.trapay.uk с payment_id параметром
     const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
     const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
     const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
@@ -79,7 +78,7 @@ export class PaymentLinkService {
     let finalFailUrl: string;
     let finalPendingUrl: string;
 
-    // ✅ ОБНОВЛЕНО: Для KLYME, CoinToPay и Noda используем pending URL как success URL
+    // Для KLYME, CoinToPay и Noda используем pending URL как success URL
     if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
       finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
@@ -135,11 +134,9 @@ export class PaymentLinkService {
     }
   }
 
-  // ✅ ДОБАВЛЕНО: Helper method to check if gateway is allowed for shop
   private async checkGatewayPermission(shopId: string, gatewayName: string): Promise<void> {
     console.log(`🔐 Checking gateway permission for shop ${shopId}: ${gatewayName}`);
 
-    // Get shop's configured payment gateways
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
       select: {
@@ -154,7 +151,6 @@ export class PaymentLinkService {
       throw new Error('Shop not found');
     }
 
-    // Parse enabled gateways from JSON string
     let enabledGateways: string[] = [];
     
     if (shop.paymentGateways) {
@@ -163,21 +159,17 @@ export class PaymentLinkService {
         console.log(`🔐 Shop ${shop.username} enabled gateways:`, enabledGateways);
       } catch (error) {
         console.error('Error parsing payment gateways:', error);
-        // Fallback to default gateways if parsing fails
         enabledGateways = ['Plisio'];
       }
     } else {
-      // Default gateway if none configured
       enabledGateways = ['Plisio'];
       console.log(`🔐 Shop ${shop.username} using default gateways:`, enabledGateways);
     }
 
-    // Map gateway name to display name for comparison
     const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
     
     console.log(`🔐 Checking if "${gatewayDisplayName}" is in enabled gateways:`, enabledGateways);
 
-    // Check if the gateway is enabled for this shop
     if (!enabledGateways.includes(gatewayDisplayName)) {
       console.error(`❌ Gateway "${gatewayDisplayName}" not allowed for shop ${shop.username}`);
       console.error(`❌ Enabled gateways: ${enabledGateways.join(', ')}`);
@@ -192,7 +184,6 @@ export class PaymentLinkService {
     console.log(`✅ Gateway "${gatewayDisplayName}" is allowed for shop ${shop.username}`);
   }
 
-  // ✅ ДОБАВЛЕНО: Helper method to get gateway display name
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
       'plisio': 'Plisio',
@@ -219,7 +210,6 @@ export class PaymentLinkService {
 
     console.log(`🔗 Creating payment link for gateway: ${gatewayName}`);
 
-    // ✅ ДОБАВЛЕНО: Проверяем разрешения на использование шлюза
     await this.checkGatewayPermission(shopId, gatewayName);
 
     if (gatewayName === 'plisio' && !linkData.sourceCurrency) {
@@ -249,7 +239,6 @@ export class PaymentLinkService {
 
     this.validateKlymeCurrency(gatewayName, finalCurrency);
 
-    // ✅ ОБНОВЛЕНО: Создаем payment link с тремя типами URL
     const paymentLink = await prisma.paymentLink.create({
       data: {
         shopId,
@@ -261,10 +250,9 @@ export class PaymentLinkService {
         currentPayments: 0,
         status: 'ACTIVE',
         expiresAt: linkData.expiresAt ? new Date(linkData.expiresAt) : undefined,
-        // ✅ ОБНОВЛЕНО: Сохраняем все три типа URL
         successUrl: linkData.successUrl || null,
         failUrl: linkData.failUrl || null,
-        pendingUrl: linkData.pendingUrl || null, // ✅ НОВОЕ: Сохраняем pending URL
+        pendingUrl: linkData.pendingUrl || null,
         country: rapydCountry,
         language: linkData.language || 'EN',
       },
@@ -406,7 +394,6 @@ export class PaymentLinkService {
       if (isValidGatewayId(updateData.gateway)) {
         const gatewayName = getGatewayNameById(updateData.gateway);
         if (gatewayName) {
-          // ✅ ДОБАВЛЕНО: Проверяем разрешения при обновлении шлюза
           await this.checkGatewayPermission(shopId, gatewayName);
           updatePayload.gateway = gatewayName;
         }
@@ -527,7 +514,7 @@ export class PaymentLinkService {
             id: true,
             name: true,
             status: true,
-            paymentGateways: true, // ✅ ДОБАВЛЕНО: Получаем настройки шлюзов
+            paymentGateways: true,
           },
         },
       },
@@ -558,7 +545,6 @@ export class PaymentLinkService {
       throw new Error('Payment link is not active');
     }
 
-    // ✅ ДОБАВЛЕНО: Проверяем разрешения на использование шлюза при инициации платежа
     await this.checkGatewayPermission(link.shopId, link.gateway);
 
     const paymentAmount = link.amount;
@@ -571,7 +557,6 @@ export class PaymentLinkService {
     const gatewayOrderId = this.generateGatewayOrderId();
     console.log(`🎯 Generated gateway order_id: ${gatewayOrderId} (8digits-8digits format for ${link.gateway})`);
 
-    // ✅ ИСПРАВЛЕНО: Сначала создаем платеж, чтобы получить его ID
     const payment = await prisma.payment.create({
       data: {
         shopId: link.shopId,
@@ -582,10 +567,9 @@ export class PaymentLinkService {
         sourceCurrency: link.sourceCurrency || undefined,
         usage: 'ONCE',
         expiresAt: link.expiresAt || undefined,
-        // ✅ ВРЕМЕННО: Устанавливаем временные URL, обновим их после генерации
         successUrl: 'temp',
         failUrl: 'temp',
-        pendingUrl: 'temp', // ✅ НОВОЕ: Временный pending URL
+        pendingUrl: 'temp',
         status: 'PENDING',
         orderId: null,
         gatewayOrderId: gatewayOrderId,
@@ -600,7 +584,6 @@ export class PaymentLinkService {
 
     console.log(`💾 Payment created: ${payment.id}`);
 
-    // ✅ ОБНОВЛЕНО: Теперь генерируем URL с реальным ID платежа и gatewayOrderId
     const baseUrl = process.env.BASE_URL || 'https://tesoft.uk';
     const { 
       finalSuccessUrl, 
@@ -612,20 +595,19 @@ export class PaymentLinkService {
     } = this.generateGatewayUrls(
       link.gateway, 
       payment.id, 
-      gatewayOrderId, // ✅ НОВОЕ: Передаем gatewayOrderId
+      gatewayOrderId,
       baseUrl, 
       link.successUrl || undefined, 
       link.failUrl || undefined,
-      link.pendingUrl || undefined // ✅ НОВОЕ: Передаем pending URL из ссылки
+      link.pendingUrl || undefined
     );
 
-    // ✅ ОБНОВЛЕНО: Обновляем платеж с правильными URL (включая pending)
     await prisma.payment.update({
       where: { id: payment.id },
       data: {
         successUrl: dbSuccessUrl,
         failUrl: dbFailUrl,
-        pendingUrl: dbPendingUrl, // ✅ НОВОЕ: Сохраняем pending URL
+        pendingUrl: dbPendingUrl,
       },
     });
 
@@ -673,6 +655,7 @@ export class PaymentLinkService {
           },
         });
 
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
         const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Plisio payment URL: ${paymentUrl}`);
 
@@ -709,7 +692,8 @@ export class PaymentLinkService {
           },
         });
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Rapyd payment URL: ${paymentUrl}`);
 
         return {
@@ -727,7 +711,7 @@ export class PaymentLinkService {
           amount: paymentAmount,
           currency: link.currency,
           webhookUrl: `https://tesoft.uk/gateways/noda/webhook`,
-          returnUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для Noda
+          returnUrl: finalPendingUrl,
           expiryDate: link.expiresAt?.toISOString(),
         });
 
@@ -743,7 +727,8 @@ export class PaymentLinkService {
           },
         });
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Noda payment URL: ${paymentUrl}`);
 
         return {
@@ -773,13 +758,13 @@ export class PaymentLinkService {
           },
         });
 
-        // ✅ ДОБАВЛЕНО: Запускаем индивидуальные проверки для CoinToPay платежа
         if (gatewayPaymentId) {
           console.log(`🪙 Scheduling individual status checks for CoinToPay payment: ${payment.id} (${gatewayPaymentId})`);
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        const paymentUrl = `https://tesoft.uk/gateway/payment.php?id=${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 CoinToPay payment URL: ${paymentUrl}`);
 
         return {
@@ -804,7 +789,7 @@ export class PaymentLinkService {
           amount: paymentAmount,
           currency: link.currency,
           region,
-          redirectUrl: finalPendingUrl, // ✅ ОБНОВЛЕНО: Используем pending URL для KLYME
+          redirectUrl: finalPendingUrl,
         });
 
         gatewayPaymentId = klymeResult.gateway_payment_id;
@@ -818,6 +803,7 @@ export class PaymentLinkService {
           },
         });
 
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
         const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`✅ KLYME ${region} payment created successfully with gateway order_id: ${gatewayOrderId}`);
         console.log(`🔗 KLYME ${region} payment URL: ${paymentUrl}`);
@@ -842,7 +828,6 @@ export class PaymentLinkService {
     }
   }
 
-  // ✅ ИСПРАВЛЕНО: Improved handleSuccessfulPayment to prevent double counting
   async handleSuccessfulPayment(paymentId: string): Promise<void> {
     console.log(`📈 Processing successful payment for payment link counter: ${paymentId}`);
 
@@ -858,23 +843,18 @@ export class PaymentLinkService {
       return;
     }
 
-    // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем, что платеж действительно стал PAID и не был учтен ранее
     if (payment.status !== 'PAID') {
       console.log(`📈 Payment ${paymentId} status is ${payment.status}, not PAID. Skipping counter update.`);
       return;
     }
 
-    // ✅ ДОБАВЛЕНО: Проверяем, не был ли этот платеж уже учтен в счетчике
-    // Мы можем использовать поле paidAt как индикатор того, что платеж был обработан
     if (!payment.paidAt) {
       console.log(`📈 Payment ${paymentId} has no paidAt timestamp, might not be properly paid. Skipping counter update.`);
       return;
     }
 
-    // ✅ ДОБАВЛЕНО: Используем транзакцию для атомарного обновления
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // Получаем текущее состояние payment link
         const currentLink = await tx.paymentLink.findUnique({
           where: { id: payment.paymentLinkId! },
           select: {
@@ -889,31 +869,26 @@ export class PaymentLinkService {
           throw new Error(`Payment link ${payment.paymentLinkId} not found`);
         }
 
-        // ✅ ДОБАВЛЕНО: Проверяем, что счетчик еще не достиг максимума
         if (currentLink.currentPayments >= currentLink.maxPayments) {
           console.log(`📈 Payment link ${payment.paymentLinkId} already at max payments (${currentLink.currentPayments}/${currentLink.maxPayments}), skipping increment`);
           return currentLink;
         }
 
-        // ✅ ДОБАВЛЕНО: Проверяем, что этот конкретный платеж еще не был учтен
-        // Мы можем добавить специальное поле или использовать логику проверки
         const existingSuccessfulPayments = await tx.payment.count({
           where: {
             paymentLinkId: payment.paymentLinkId!,
             status: 'PAID',
             paidAt: { not: null },
-            id: { not: paymentId }, // Исключаем текущий платеж
+            id: { not: paymentId },
           },
         });
 
-        const expectedCurrentPayments = existingSuccessfulPayments + 1; // +1 для текущего платежа
+        const expectedCurrentPayments = existingSuccessfulPayments + 1;
 
-        // ✅ ИСПРАВЛЕНИЕ: Устанавливаем правильное значение счетчика
         const updatedLink = await tx.paymentLink.update({
           where: { id: payment.paymentLinkId! },
           data: {
             currentPayments: expectedCurrentPayments,
-            // Если достигли максимума, помечаем как завершенный
             status: expectedCurrentPayments >= currentLink.maxPayments ? 'COMPLETED' : currentLink.status,
           },
         });
@@ -929,7 +904,6 @@ export class PaymentLinkService {
 
     } catch (error) {
       console.error(`❌ Failed to update payment link counter for payment ${paymentId}:`, error);
-      // Не пробрасываем ошибку, чтобы не нарушить основной процесс обработки платежа
     }
   }
 
@@ -997,10 +971,9 @@ export class PaymentLinkService {
       currentPayments: link.currentPayments,
       status: link.status,
       expiresAt: link.expiresAt || undefined,
-      // ✅ ОБНОВЛЕНО: Возвращаем все три типа URL
       successUrl: link.successUrl || undefined,
       failUrl: link.failUrl || undefined,
-      pendingUrl: link.pendingUrl || undefined, // ✅ НОВОЕ: Возвращаем pending URL
+      pendingUrl: link.pendingUrl || undefined,
       country: link.country || undefined,
       language: link.language || undefined,
       linkUrl: `https://app.trapay.uk/link/${link.id}`,
