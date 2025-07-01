@@ -498,7 +498,7 @@ export class TelegramBotService {
     }
   }
 
-  // ✅ ИСПРАВЛЕНО: Method to send payment notification with gateway display name
+  // ✅ ОБНОВЛЕНО: Method to send payment notification with customer info
   async sendPaymentNotification(shopId: string, payment: any, status: 'created' | 'paid' | 'failed' | 'expired' | 'refund' | 'chargeback' | 'processing'): Promise<void> {
     const statusEmojis = {
       created: '🆕',
@@ -535,6 +535,19 @@ export class TelegramBotService {
       `🆔 Payment ID: \`${payment.id}\`\n` +
       `🏪 Gateway: \`${gatewayDisplayName}\`\n` + // ✅ ИСПРАВЛЕНО: Показываем displayName шлюза
       `📅 Date: ${new Date(payment.createdAt).toLocaleString('en-US')}\n`;
+
+    // ✅ ДОБАВЛЕНО: Информация о плательщике
+    if (payment.customerName || payment.customerEmail) {
+      message += `\n👤 *Customer Information:*\n`;
+      
+      if (payment.customerName) {
+        message += `📛 Name: \`${payment.customerName}\`\n`;
+      }
+      
+      if (payment.customerEmail) {
+        message += `📧 Email: \`${payment.customerEmail}\`\n`;
+      }
+    }
 
     // Additional information for chargeback
     if (status === 'chargeback' && payment.chargebackAmount) {
