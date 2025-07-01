@@ -769,7 +769,7 @@ export class AdminService {
   }
 
   async createPayout(payoutData: CreatePayoutRequest): Promise<PayoutResponse> {
-    const { shopId, amount, network, notes } = payoutData;
+    const { shopId, amount, network, notes, periodFrom, periodTo } = payoutData;
 
     // Verify shop exists
     const shop = await prisma.shop.findUnique({
@@ -785,16 +785,27 @@ export class AdminService {
       throw new Error('Shop not found');
     }
 
+    // ✅ НОВОЕ: Подготавливаем данные для создания выплаты с периодом
+    const payoutCreateData: any = {
+      shopId,
+      amount,
+      network,
+      status: 'COMPLETED', // Admin-created payouts are always completed
+      notes,
+      paidAt: new Date(), // Set to current time
+    };
+
+    // ✅ НОВОЕ: Добавляем период выплаты если указан
+    if (periodFrom && periodTo) {
+      payoutCreateData.periodFrom = new Date(periodFrom);
+      payoutCreateData.periodTo = new Date(periodTo);
+      
+      console.log(`💸 Creating payout with period: ${periodFrom} - ${periodTo}`);
+    }
+
     // Create payout
     const payout = await prisma.payout.create({
-      data: {
-        shopId,
-        amount,
-        network,
-        status: 'COMPLETED', // Admin-created payouts are always completed
-        notes,
-        paidAt: new Date(), // Set to current time
-      },
+      data: payoutCreateData,
     });
 
     return {
@@ -807,6 +818,8 @@ export class AdminService {
       status: payout.status,
       txid: payout.txid,
       notes: payout.notes,
+      periodFrom: payout.periodFrom, // ✅ НОВОЕ: Возвращаем период выплаты
+      periodTo: payout.periodTo,     // ✅ НОВОЕ: Возвращаем период выплаты
       createdAt: payout.createdAt,
       paidAt: payout.paidAt,
     };
@@ -881,6 +894,8 @@ export class AdminService {
         status: payout.status,
         txid: payout.txid,
         notes: payout.notes,
+        periodFrom: payout.periodFrom, // ✅ НОВОЕ: Возвращаем период выплаты
+        periodTo: payout.periodTo,     // ✅ НОВОЕ: Возвращаем период выплаты
         createdAt: payout.createdAt,
         paidAt: payout.paidAt,
       })),
@@ -918,6 +933,8 @@ export class AdminService {
       status: payout.status,
       txid: payout.txid,
       notes: payout.notes,
+      periodFrom: payout.periodFrom, // ✅ НОВОЕ: Возвращаем период выплаты
+      periodTo: payout.periodTo,     // ✅ НОВОЕ: Возвращаем период выплаты
       createdAt: payout.createdAt,
       paidAt: payout.paidAt,
     };
@@ -929,6 +946,7 @@ export class AdminService {
     });
   }
 
+  // ✅ ОБНОВЛЕНО: Возвращаем ВСЕ данные платежа для админа
   async getAllPayments(filters: any): Promise<{
     payments: any[];
     pagination: {
@@ -969,7 +987,9 @@ export class AdminService {
       where.OR = [
         { orderId: { contains: search, mode: 'insensitive' } },
         { gatewayOrderId: { contains: search, mode: 'insensitive' } },
+        { gatewayPaymentId: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
         { shop: { name: { contains: search, mode: 'insensitive' } } },
         { shop: { username: { contains: search, mode: 'insensitive' } } },
       ];
@@ -981,12 +1001,36 @@ export class AdminService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        // ✅ НОВОЕ: Включаем ВСЕ поля платежа для админа
         include: {
           shop: {
             select: {
+              id: true,
               name: true,
               username: true,
+              telegram: true,
+              shopUrl: true,
+              status: true,
             },
+          },
+          paymentLink: {
+            select: {
+              id: true,
+              type: true,
+              currentPayments: true,
+              status: true,
+            },
+          },
+          webhookLogs: {
+            select: {
+              id: true,
+              event: true,
+              statusCode: true,
+              retryCount: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 5, // Последние 5 webhook логов
           },
         },
       }),
@@ -994,25 +1038,111 @@ export class AdminService {
     ]);
 
     return {
-      payments: payments.map(payment => ({
-        id: payment.id,
-        shopId: payment.shopId,
-        shopName: payment.shop.name,
-        shopUsername: payment.shop.username,
-        gateway: payment.gateway,
-        amount: payment.amount,
-        currency: payment.currency,
-        status: payment.status,
-        orderId: payment.orderId,
-        gatewayOrderId: payment.gatewayOrderId,
-        customerEmail: payment.customerEmail,
-        customerName: payment.customerName,
-        createdAt: payment.createdAt,
-        updatedAt: payment.updatedAt,
-        paidAt: payment.paidAt,
-        failureMessage: payment.failureMessage,
-        txUrls: payment.txUrls,
-      })),
+      payments: payments.map(payment => {
+        // ✅ НОВОЕ: Парсим tx_urls если есть
+        let txUrls: string[] | null = null;
+        if (payment.txUrls) {
+          try {
+            txUrls = JSON.parse(payment.txUrls);
+          } catch (error) {
+            console.error('Error parsing tx_urls:', error);
+            txUrls = null;
+          }
+        }
+
+        // ✅ НОВОЕ: Возвращаем ВСЕ данные платежа
+        return {
+          // Основные поля платежа
+          id: payment.id,
+          shopId: payment.shopId,
+          paymentLinkId: payment.paymentLinkId,
+          gateway: payment.gateway,
+          amount: payment.amount,
+          currency: payment.currency,
+          sourceCurrency: payment.sourceCurrency,
+          usage: payment.usage,
+          status: payment.status,
+          
+          // URL поля
+          externalPaymentUrl: payment.externalPaymentUrl,
+          successUrl: payment.successUrl,
+          failUrl: payment.failUrl,
+          pendingUrl: payment.pendingUrl,
+          whiteUrl: payment.whiteUrl,
+          
+          // ID поля
+          orderId: payment.orderId,
+          gatewayOrderId: payment.gatewayOrderId,
+          gatewayPaymentId: payment.gatewayPaymentId,
+          
+          // Клиентские данные
+          customerEmail: payment.customerEmail,
+          customerName: payment.customerName,
+          
+          // Plisio поля
+          invoiceTotalSum: payment.invoiceTotalSum,
+          qrCode: payment.qrCode,
+          qrUrl: payment.qrUrl,
+          txUrls: txUrls,
+          
+          // Rapyd поля
+          country: payment.country,
+          language: payment.language,
+          amountIsEditable: payment.amountIsEditable,
+          maxPayments: payment.maxPayments,
+          rapydCustomer: payment.rapydCustomer,
+          
+          // Детали платежа
+          cardLast4: payment.cardLast4,
+          paymentMethod: payment.paymentMethod,
+          bankId: payment.bankId,
+          remitterIban: payment.remitterIban,
+          remitterName: payment.remitterName,
+          
+          // Статус и ошибки
+          failureMessage: payment.failureMessage,
+          
+          // Административные поля
+          merchantPaid: payment.merchantPaid,
+          chargebackAmount: payment.chargebackAmount,
+          adminNotes: payment.adminNotes,
+          statusChangedBy: payment.statusChangedBy,
+          statusChangedAt: payment.statusChangedAt,
+          
+          // Временные поля
+          expiresAt: payment.expiresAt,
+          createdAt: payment.createdAt,
+          updatedAt: payment.updatedAt,
+          paidAt: payment.paidAt,
+          
+          // Связанные данные
+          shop: {
+            id: payment.shop.id,
+            name: payment.shop.name,
+            username: payment.shop.username,
+            telegram: payment.shop.telegram,
+            shopUrl: payment.shop.shopUrl,
+            status: payment.shop.status,
+          },
+          
+          // Payment Link данные (если есть)
+          paymentLink: payment.paymentLink ? {
+            id: payment.paymentLink.id,
+            type: payment.paymentLink.type,
+            currentPayments: payment.paymentLink.currentPayments,
+            status: payment.paymentLink.status,
+          } : null,
+          
+          // Webhook логи
+          webhookLogs: payment.webhookLogs.map(log => ({
+            id: log.id,
+            event: log.event,
+            statusCode: log.statusCode,
+            retryCount: log.retryCount,
+            createdAt: log.createdAt,
+          })),
+        };
+      }),
       pagination: {
         page,
         limit,
@@ -1022,45 +1152,155 @@ export class AdminService {
     };
   }
 
+  // ✅ ОБНОВЛЕНО: Возвращаем ВСЕ данные платежа для админа
   async getPaymentById(id: string): Promise<any | null> {
     const payment = await prisma.payment.findUnique({
       where: { id },
+      // ✅ НОВОЕ: Включаем ВСЕ поля платежа для админа
       include: {
         shop: {
           select: {
+            id: true,
             name: true,
             username: true,
+            telegram: true,
+            shopUrl: true,
+            status: true,
+            publicKey: true,
+            secretKey: true,
           },
+        },
+        paymentLink: {
+          select: {
+            id: true,
+            type: true,
+            currentPayments: true,
+            status: true,
+            expiresAt: true,
+          },
+        },
+        webhookLogs: {
+          select: {
+            id: true,
+            event: true,
+            statusCode: true,
+            retryCount: true,
+            responseBody: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
 
     if (!payment) return null;
 
+    // ✅ НОВОЕ: Парсим tx_urls если есть
+    let txUrls: string[] | null = null;
+    if (payment.txUrls) {
+      try {
+        txUrls = JSON.parse(payment.txUrls);
+      } catch (error) {
+        console.error('Error parsing tx_urls:', error);
+        txUrls = null;
+      }
+    }
+
+    // ✅ НОВОЕ: Возвращаем ВСЕ данные платежа для админа
     return {
+      // Основные поля платежа
       id: payment.id,
       shopId: payment.shopId,
-      shopName: payment.shop.name,
-      shopUsername: payment.shop.username,
+      paymentLinkId: payment.paymentLinkId,
       gateway: payment.gateway,
       amount: payment.amount,
       currency: payment.currency,
+      sourceCurrency: payment.sourceCurrency,
+      usage: payment.usage,
       status: payment.status,
-      orderId: payment.orderId,
-      gatewayOrderId: payment.gatewayOrderId,
-      gatewayPaymentId: payment.gatewayPaymentId,
-      customerEmail: payment.customerEmail,
-      customerName: payment.customerName,
+      
+      // URL поля
       externalPaymentUrl: payment.externalPaymentUrl,
       successUrl: payment.successUrl,
       failUrl: payment.failUrl,
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt,
-      paidAt: payment.paidAt,
+      pendingUrl: payment.pendingUrl,
+      whiteUrl: payment.whiteUrl,
+      
+      // ID поля
+      orderId: payment.orderId,
+      gatewayOrderId: payment.gatewayOrderId,
+      gatewayPaymentId: payment.gatewayPaymentId,
+      
+      // Клиентские данные
+      customerEmail: payment.customerEmail,
+      customerName: payment.customerName,
+      
+      // Plisio поля
+      invoiceTotalSum: payment.invoiceTotalSum,
+      qrCode: payment.qrCode,
+      qrUrl: payment.qrUrl,
+      txUrls: txUrls,
+      
+      // Rapyd поля
+      country: payment.country,
+      language: payment.language,
+      amountIsEditable: payment.amountIsEditable,
+      maxPayments: payment.maxPayments,
+      rapydCustomer: payment.rapydCustomer,
+      
+      // Детали платежа
+      cardLast4: payment.cardLast4,
+      paymentMethod: payment.paymentMethod,
+      bankId: payment.bankId,
+      remitterIban: payment.remitterIban,
+      remitterName: payment.remitterName,
+      
+      // Статус и ошибки
+      failureMessage: payment.failureMessage,
+      
+      // Административные поля
       merchantPaid: payment.merchantPaid,
+      chargebackAmount: payment.chargebackAmount,
       adminNotes: payment.adminNotes,
       statusChangedBy: payment.statusChangedBy,
       statusChangedAt: payment.statusChangedAt,
+      
+      // Временные поля
+      expiresAt: payment.expiresAt,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+      paidAt: payment.paidAt,
+      
+      // Связанные данные
+      shop: {
+        id: payment.shop.id,
+        name: payment.shop.name,
+        username: payment.shop.username,
+        telegram: payment.shop.telegram,
+        shopUrl: payment.shop.shopUrl,
+        status: payment.shop.status,
+        publicKey: payment.shop.publicKey,
+        secretKey: payment.shop.secretKey,
+      },
+      
+      // Payment Link данные (если есть)
+      paymentLink: payment.paymentLink ? {
+        id: payment.paymentLink.id,
+        type: payment.paymentLink.type,
+        currentPayments: payment.paymentLink.currentPayments,
+        status: payment.paymentLink.status,
+        expiresAt: payment.paymentLink.expiresAt,
+      } : null,
+      
+      // Webhook логи
+      webhookLogs: payment.webhookLogs.map(log => ({
+        id: log.id,
+        event: log.event,
+        statusCode: log.statusCode,
+        retryCount: log.retryCount,
+        responseBody: log.responseBody,
+        createdAt: log.createdAt,
+      })),
     };
   }
 
