@@ -436,31 +436,111 @@ export class AdminService {
     return gatewayDisplayNames[gatewayName] || gatewayName;
   }
 
-  // Get payout statistics
+  // ✅ ИСПРАВЛЕНО: Get payout statistics - теперь считает на основе платежей
   async getPayoutStats(): Promise<any> {
+    console.log('💰 Calculating payout statistics based on payments...');
+
+    // ✅ НОВОЕ: Считаем статистику на основе платежей, а не выплат
     const [
+      // Общее количество выплат (записи в таблице payout)
       totalPayouts,
       completedPayouts,
       pendingPayouts,
-      totalAmount,
-      completedAmount,
+      
+      // Суммы на основе платежей
+      totalPaidPayments,
+      totalPayoutAmount,
+      completedPayoutAmount,
     ] = await Promise.all([
+      // Количество записей в таблице payout
       prisma.payout.count(),
       prisma.payout.count({ where: { status: 'COMPLETED' } }),
       prisma.payout.count({ where: { status: 'PENDING' } }),
+      
+      // Платежи для расчета сумм
+      this.calculatePayoutStatsFromPayments(),
       this.calculateTotalPayoutAmount(),
       this.calculateCompletedPayoutAmount(),
     ]);
 
-    return {
+    console.log('💰 Payout stats calculated:', {
       totalPayouts,
       completedPayouts,
       pendingPayouts,
-      rejectedPayouts: totalPayouts - completedPayouts - pendingPayouts,
-      totalAmount: Math.round(totalAmount * 100) / 100,
-      completedAmount: Math.round(completedAmount * 100) / 100,
-      pendingAmount: Math.round((totalAmount - completedAmount) * 100) / 100,
+      totalPaidPayments,
+      totalPayoutAmount,
+      completedPayoutAmount,
+    });
+
+    return {
+      totalPayouts: totalPaidPayments.totalPayments || 0,        // ✅ Количество оплаченных платежей
+      completedPayouts: completedPayouts || 0,                   // Количество завершенных выплат
+      pendingPayouts: totalPaidPayments.awaitingPayouts || 0,   // ✅ Количество ожидающих выплату
+      rejectedPayouts: (totalPayouts - completedPayouts - pendingPayouts) || 0,
+      totalAmount: Math.round((totalPaidPayments.totalAmountUSDT || 0) * 100) / 100,     // ✅ Общая сумма в USDT
+      completedAmount: Math.round((completedPayoutAmount || 0) * 100) / 100,             // Выплаченная сумма
+      pendingAmount: Math.round((totalPaidPayments.awaitingAmountUSDT || 0) * 100) / 100, // ✅ Ожидающая выплату сумма
     };
+  }
+
+  // ✅ НОВОЕ: Метод для расчета статистики выплат на основе платежей
+  private async calculatePayoutStatsFromPayments(): Promise<{
+    totalPayments: number;
+    totalAmountUSDT: number;
+    awaitingPayouts: number;
+    awaitingAmountUSDT: number;
+  }> {
+    console.log('💰 Calculating payout stats from payments...');
+
+    // Получаем все оплаченные платежи
+    const paidPayments = await prisma.payment.findMany({
+      where: {
+        status: 'PAID',
+        paidAt: { not: null },
+      },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        merchantPaid: true,
+        shopId: true,
+        shop: {
+          select: {
+            gatewaySettings: true,
+          },
+        },
+        gateway: true,
+      },
+    });
+
+    console.log(`💰 Found ${paidPayments.length} paid payments`);
+
+    let totalAmountUSDT = 0;
+    let awaitingAmountUSDT = 0;
+    let awaitingPayouts = 0;
+
+    // Обрабатываем каждый платеж
+    for (const payment of paidPayments) {
+      // Конвертируем в USDT
+      const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
+      totalAmountUSDT += amountUSDT;
+
+      // Если платеж не оплачен мерчанту
+      if (!payment.merchantPaid) {
+        awaitingAmountUSDT += amountUSDT;
+        awaitingPayouts++;
+      }
+    }
+
+    const result = {
+      totalPayments: paidPayments.length,
+      totalAmountUSDT,
+      awaitingPayouts,
+      awaitingAmountUSDT,
+    };
+
+    console.log('💰 Payout stats from payments:', result);
+    return result;
   }
 
   // Get merchants awaiting payout
