@@ -116,10 +116,10 @@ const gatewayIdValidator = Joi.string().custom((value, helpers) => {
   return value;
 });
 
-// Gateway settings validation schema
+// ✅ ОБНОВЛЕНО: Gateway settings validation schema без payoutDelay
 const gatewaySettingsSchema = Joi.object({
   commission: Joi.number().min(0).max(100).required(),
-  payoutDelay: Joi.number().integer().min(0).max(365).required(),
+  // ✅ УДАЛЕНО: payoutDelay - выплаты доступны сразу
 });
 
 // Wallet settings validation schema

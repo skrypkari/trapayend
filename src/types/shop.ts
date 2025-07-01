@@ -1,6 +1,6 @@
 export interface GatewaySettings {
   commission: number; // Percentage (0-100)
-  payoutDelay: number; // Days
+  // ✅ УДАЛЕНО: payoutDelay - выплаты доступны сразу
 }
 
 export interface WalletSettings {
