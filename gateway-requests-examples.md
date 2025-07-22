@@ -6,7 +6,7 @@
 **Параметры в URL:**
 
 ```
-https://api.plisio.net/api/v1/invoices/new?api_key=HIDDEN&order_number=12345678-87654321&order_name=Payment%205%20USD&description=Payment%205%20USD&success_url=https%3A%2F%2Ftesoft.uk%2Fgateway%2Fsuccess.php%3Fid%3Dpayment_abc123&fail_url=https%3A%2F%2Ftesoft.uk%2Fgateway%2Ffail.php%3Fid%3Dpayment_abc123&callback_url=https%3A%2F%2Fapi.trapay.uk%2Fapi%2Fwebhooks%2Fgateway%2Fplisio&currency=USDT&source_currency=USD&source_amount=5.00&email=user%40example.com&name=John%20Doe
+https://api.plisio.net/api/v1/invoices/new?api_key=HIDDEN&order_number=12345678-87654321&order_name=Payment%205%20USD&description=Payment%205%20USD&success_url=https%3A%2F%2Ftesoft.uk%2Fgateway%2Fsuccess.php%3Fid%3Dpayment_abc123&fail_url=https%3A%2F%2Ftesoft.uk%2Fgateway%2Ffail.php%3Fid%3Dpayment_abc123&callback_url=https%3A%2F%2Fapitest.trapay.uk%2Fapi%2Fwebhooks%2Fgateway%2Fplisio&currency=USDT&source_currency=USD&source_amount=5.00&email=user%40example.com&name=John%20Doe
 ```
 
 **Ответ:**
@@ -216,11 +216,11 @@ https://api.plisio.net/api/v1/invoices/new?api_key=HIDDEN&order_number=12345678-
 - **Pending URL:** `https://tesoft.uk/gateway/pending.php?id={payment_id}` (для Noda, KLYME, CoinToPay)
 
 ### 2. **Webhook URLs:**
-- **Plisio:** `https://api.trapay.uk/api/webhooks/gateway/plisio`
-- **Rapyd:** `https://api.trapay.uk/api/webhooks/gateway/rapyd`
+- **Plisio:** `https://apitest.trapay.uk/api/webhooks/gateway/plisio`
+- **Rapyd:** `https://apitest.trapay.uk/api/webhooks/gateway/rapyd`
 - **Noda:** `https://tesoft.uk/gateways/noda/webhook/`
-- **CoinToPay:** `https://api.trapay.uk/api/webhooks/gateway/cointopay`
-- **KLYME:** `https://api.trapay.uk/api/webhooks/gateway/klyme`
+- **CoinToPay:** `https://apitest.trapay.uk/api/webhooks/gateway/cointopay`
+- **KLYME:** `https://apitest.trapay.uk/api/webhooks/gateway/klyme`
 
 ### 3. **Gateway Order ID формат:**
 Все шлюзы используют формат: `12345678-87654321` (8цифр-8цифр)

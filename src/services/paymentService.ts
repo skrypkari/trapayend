@@ -56,7 +56,7 @@ export class PaymentService {
     return gatewayOrderId;
   }
 
-  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде apptest.trapay.uk
   private generateGatewayUrls(
     gatewayName: string, 
     paymentId: string, 
@@ -87,10 +87,10 @@ export class PaymentService {
       };
     }
 
-    // ✅ ОБНОВЛЕНО: Везде используем app.trapay.uk с payment_id параметром
-    const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
-    const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
-    const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    // ✅ ОБНОВЛЕНО: Везде используем apptest.trapay.uk с payment_id параметром
+    const dbSuccessUrl = successUrl || `https://apptest.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbFailUrl = failUrl || `https://apptest.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbPendingUrl = pendingUrl || `https://apptest.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
 
     // ✅ ОБНОВЛЕНО: Для шлюзов используем tesoft.uk только для внутренних redirect
     let finalSuccessUrl: string;
@@ -464,8 +464,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Plisio payment URL: ${paymentUrl}`);
 
         return {
@@ -507,8 +507,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Rapyd payment URL: ${paymentUrl}`);
 
         return {
@@ -545,8 +545,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Noda payment URL: ${paymentUrl}`);
 
         return {
@@ -583,8 +583,8 @@ export class PaymentService {
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 CoinToPay payment URL: ${paymentUrl}`);
 
         return {
@@ -624,8 +624,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
         console.log(`✅ KLYME ${region} payment created successfully with gateway order_id: ${gatewayOrderId}`);
         console.log(`🔗 KLYME ${region} payment URL: ${paymentUrl}`);
 
@@ -697,8 +697,8 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
@@ -830,8 +830,8 @@ export class PaymentService {
       console.log(`   - Failure Message: ${payment.failureMessage}`);
     }
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
@@ -960,8 +960,8 @@ export class PaymentService {
 
     return {
       payments: payments.map(payment => {
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
 
         let txUrls: string[] | null = null;
         if (payment.txUrls) {
@@ -1071,8 +1071,8 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {

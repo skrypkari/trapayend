@@ -79,7 +79,7 @@ export class PlisioService {
       description: description,
       success_url: successUrl,
       fail_url: failUrl,
-      callback_url: 'https://api.trapay.uk/api/webhooks/gateway/plisio',
+      callback_url: 'https://apitest.trapay.uk/api/webhooks/gateway/plisio',
     });
 
     // ✅ ДОБАВЛЕНО: Логика для source_currency и currency

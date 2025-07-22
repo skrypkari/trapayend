@@ -39,7 +39,7 @@ export interface PaymentLinkResponse {
   country?: string;
   language?: string;
   // URLs
-  linkUrl: string; // ✅ ИСПРАВЛЕНО: https://app.trapay.uk/link/{id}
+  linkUrl: string; // ✅ ИСПРАВЛЕНО: https://apptest.trapay.uk/link/{id}
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
