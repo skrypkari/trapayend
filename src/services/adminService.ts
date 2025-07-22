@@ -215,18 +215,23 @@ export class AdminService {
       prisma.shop.count(),
       prisma.shop.count({ where: { status: 'ACTIVE' } }),
       prisma.payment.count({
-        where: { createdAt: { gte: startDate } },
+        where: { 
+          createdAt: { gte: startDate },
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+        },
       }),
       prisma.payment.count({
         where: {
           status: 'PAID',
           createdAt: { gte: startDate },
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         },
       }),
       prisma.payment.findMany({
         where: {
           status: 'PAID',
           createdAt: { gte: startDate },
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         },
         select: {
           amount: true,
@@ -234,6 +239,9 @@ export class AdminService {
         },
       }),
       prisma.payment.findMany({
+        where: {
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+        },
         take: 10,
         orderBy: { createdAt: 'desc' },
         include: {
@@ -308,6 +316,7 @@ export class AdminService {
     // Базовые условия для запроса
     const whereConditions: any = {
       status: 'PAID',
+      gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
       paidAt: {
         gte: startDate,
         lte: endDate,
@@ -522,6 +531,7 @@ export class AdminService {
 
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
+      'test_gateway': 'Test Gateway',
       'plisio': 'Plisio',
       'rapyd': 'Rapyd',
       'noda': 'Noda',
@@ -892,6 +902,17 @@ export class AdminService {
     
     if (gateway) {
       where.gateway = gateway.toLowerCase();
+    }
+
+    // Always exclude test gateway from admin payments list
+    where.gateway = where.gateway ? where.gateway : { not: 'test_gateway' };
+    if (typeof where.gateway === 'string' && where.gateway !== 'test_gateway') {
+      // If specific gateway is requested and it's not test_gateway, keep the filter
+    } else if (typeof where.gateway === 'string' && where.gateway === 'test_gateway') {
+      // If test_gateway is specifically requested, allow it (for debugging purposes)
+    } else {
+      // Default case: exclude test_gateway
+      where.gateway = { not: 'test_gateway' };
     }
 
     if (shopId) {

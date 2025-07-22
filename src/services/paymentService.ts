@@ -5,6 +5,7 @@ import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
+import { TestGatewayService } from './gateways/testGatewayService';
 import { telegramBotService } from './telegramBotService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
@@ -15,6 +16,7 @@ export class PaymentService {
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
   private klymeService: KlymeService;
+  private testGatewayService: TestGatewayService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -22,6 +24,7 @@ export class PaymentService {
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
     this.klymeService = new KlymeService();
+    this.testGatewayService = new TestGatewayService();
   }
 
   private async generateGatewayOrderId(): Promise<string> {
@@ -271,6 +274,7 @@ export class PaymentService {
 
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
+      'test_gateway': 'Test Gateway',
       'plisio': 'Plisio',
       'rapyd': 'Rapyd',
       'noda': 'Noda',
@@ -632,6 +636,33 @@ export class PaymentService {
         return {
           id: payment.id,
           gateway_payment_id: gatewayPaymentId,
+          payment_url: paymentUrl,
+          status: payment.status,
+        };
+
+      } else if (gatewayName === 'test_gateway') {
+        console.log(`🧪 Creating Test Gateway payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${amount} ${currency || 'USD'} (Test Gateway)`);
+
+        // For test gateway, we create a payment form URL instead of external payment URL
+        const testGatewayFormUrl = `https://apptest.trapay.uk/test-gateway/payment/${payment.id}`;
+        
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: testGatewayFormUrl,
+            gatewayPaymentId: `test_${gatewayOrderId}`, // Temporary ID until card is processed
+          },
+        });
+
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        console.log(`🔗 Test Gateway payment URL: ${paymentUrl}`);
+        console.log(`🧪 Test Gateway form URL: ${testGatewayFormUrl}`);
+
+        return {
+          id: payment.id,
+          gateway_payment_id: `test_${gatewayOrderId}`,
           payment_url: paymentUrl,
           status: payment.status,
         };

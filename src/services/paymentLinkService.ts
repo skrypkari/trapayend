@@ -254,6 +254,7 @@ export class PaymentLinkService {
 
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
+      'test_gateway': 'Test Gateway',
       'plisio': 'Plisio',
       'rapyd': 'Rapyd',
       'noda': 'Noda',
@@ -912,6 +913,32 @@ export class PaymentLinkService {
           expiresAt: payment.expiresAt || undefined,
         };
 
+      } else if (link.gateway === 'test_gateway') {
+        console.log(`🧪 Creating Test Gateway payment from link with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${paymentAmount} ${link.currency} (Test Gateway)`);
+
+        // For test gateway, we create a payment form URL instead of external payment URL
+        const testGatewayFormUrl = `https://apptest.trapay.uk/test-gateway/payment/${payment.id}`;
+        
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: testGatewayFormUrl,
+            gatewayPaymentId: `test_${gatewayOrderId}`, // Temporary ID until card is processed
+          },
+        });
+
+        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
+        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        console.log(`🔗 Test Gateway payment URL: ${paymentUrl}`);
+        console.log(`🧪 Test Gateway form URL: ${testGatewayFormUrl}`);
+
+        return {
+          paymentId: payment.id,
+          paymentUrl: paymentUrl,
+          expiresAt: payment.expiresAt || undefined,
+        };
+
       } else {
         throw new Error(`Unsupported gateway: ${link.gateway}`);
       }
@@ -1032,6 +1059,7 @@ export class PaymentLinkService {
         where: {
           shopId,
           paymentLinkId: { not: null },
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         },
       }),
       prisma.payment.findMany({
@@ -1039,6 +1067,7 @@ export class PaymentLinkService {
           shopId,
           paymentLinkId: { not: null },
           status: 'PAID',
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         },
         select: {
           amount: true,

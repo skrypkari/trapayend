@@ -572,6 +572,7 @@ export class ShopService {
       where: {
         shopId,
         status: 'PAID',
+        gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         paidAt: { not: null },
       },
       select: {
@@ -660,6 +661,7 @@ export class ShopService {
   // Helper method to get gateway display name
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
+      'test_gateway': 'Test Gateway',
       'plisio': 'Plisio',
       'rapyd': 'Rapyd',
       'noda': 'Noda',

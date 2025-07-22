@@ -1,5 +1,6 @@
 // Gateway ID to name mapping
 export const GATEWAY_ID_MAP: Record<string, string> = {
+  '0000': 'test_gateway',
   '0001': 'plisio',
   '0010': 'rapyd', 
   '0100': 'cointopay',
@@ -11,6 +12,7 @@ export const GATEWAY_ID_MAP: Record<string, string> = {
 
 // Reverse mapping for name to ID
 export const GATEWAY_NAME_MAP: Record<string, string> = {
+  'test_gateway': '0000',
   'plisio': '0001',
   'rapyd': '0010',
   'cointopay': '0100', 
@@ -34,6 +36,12 @@ export interface GatewayInfo {
 }
 
 export const AVAILABLE_GATEWAYS: GatewayInfo[] = [
+  {
+    id: '0000',
+    name: 'test_gateway',
+    displayName: 'Test Gateway',
+    isActive: true,
+  },
   {
     id: '0001',
     name: 'plisio',
@@ -83,6 +91,17 @@ export const AVAILABLE_GATEWAYS: GatewayInfo[] = [
 
 // ✅ ДОБАВЛЕНО: Детальная информация о шлюзах для Telegram уведомлений
 export const GATEWAY_INFO: Record<string, GatewayInfo> = {
+  '0000': {
+    id: '0000',
+    name: 'Test Gateway',
+    displayName: '0000 - Test Gateway (Cards)',
+    description: 'Test payment gateway for development - ID: 0000',
+    features: ['Test Cards'],
+    color: 'bg-gray-500',
+    fee: '0%',
+    payout: 'Instant',
+    isActive: true,
+  },
   '0001': {
     id: '0001',
     name: 'Plisio',

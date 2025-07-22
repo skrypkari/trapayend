@@ -12,6 +12,7 @@ import telegramRoutes from './telegram';
 import currencyRoutes from './currency';
 import gatewayRoutes from './gateways';
 import adminRoutes from './admin';
+import testGatewayRoutes from './testGateway';
 
 const router = Router();
 
@@ -46,6 +47,7 @@ router.use('/webhooks', webhookRoutes);
 router.use('/telegram', telegramRoutes);
 router.use('/currency', currencyRoutes);
 router.use('/gateways', gatewayRoutes);
+router.use('/test-gateway', testGatewayRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

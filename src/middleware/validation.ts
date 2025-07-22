@@ -101,7 +101,7 @@ const ALLOWED_SOURCE_CURRENCIES = [
 const ALLOWED_GATEWAY_IDS = Object.keys(GATEWAY_ID_MAP);
 
 // Allowed payment gateways (for admin/internal use)
-const ALLOWED_GATEWAYS = ['Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'KLYME EU', 'KLYME GB', 'KLYME DE'];
+const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'KLYME EU', 'KLYME GB', 'KLYME DE'];
 
 // Allowed networks for payouts
 const ALLOWED_NETWORKS = ['polygon', 'trc20', 'erc20', 'bsc'];
@@ -408,4 +408,26 @@ export const updateWebhookSettingsSchema = Joi.object({
 
 export const deleteAccountSchema = Joi.object({
   passwordConfirmation: Joi.string().min(1).max(100).required(),
+});
+
+// Test Gateway validation schema
+export const processCardSchema = Joi.object({
+  cardNumber: Joi.string().pattern(/^[\d\s-]+$/).min(13).max(19).required().messages({
+    'string.pattern.base': 'Card number must contain only digits, spaces, and dashes',
+    'string.min': 'Card number must be at least 13 digits',
+    'string.max': 'Card number must be at most 19 characters',
+  }),
+  cardHolderName: Joi.string().min(2).max(100).required().messages({
+    'string.min': 'Card holder name must be at least 2 characters',
+    'string.max': 'Card holder name must be at most 100 characters',
+  }),
+  expiryMonth: Joi.string().pattern(/^(0[1-9]|1[0-2])$/).required().messages({
+    'string.pattern.base': 'Expiry month must be in MM format (01-12)',
+  }),
+  expiryYear: Joi.string().pattern(/^\d{2}$/).required().messages({
+    'string.pattern.base': 'Expiry year must be in YY format',
+  }),
+  cvc: Joi.string().pattern(/^\d{3,4}$/).required().messages({
+    'string.pattern.base': 'CVC must be 3 or 4 digits',
+  }),
 });
