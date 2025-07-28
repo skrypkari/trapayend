@@ -90,6 +90,8 @@ export interface PayoutFilters {
   network?: string;
   dateFrom?: string;
   dateTo?: string;
+  periodFrom?: string; // ✅ НОВОЕ: Фильтр по периоду начала
+  periodTo?: string;   // ✅ НОВОЕ: Фильтр по периоду окончания
   search?: string;
 }
 

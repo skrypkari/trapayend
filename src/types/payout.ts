@@ -20,6 +20,8 @@ export interface PayoutFilters {
   method?: string;
   dateFrom?: string;
   dateTo?: string;
+  periodFrom?: string; // ✅ НОВОЕ: Фильтр по периоду начала
+  periodTo?: string;   // ✅ НОВОЕ: Фильтр по периоду окончания
 }
 
 export interface PayoutStatistics {

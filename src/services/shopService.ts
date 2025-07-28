@@ -340,7 +340,7 @@ export class ShopService {
       totalPages: number;
     };
   }> {
-    const { page, limit, status, method, dateFrom, dateTo } = filters;
+    const { page, limit, status, method, dateFrom, dateTo, periodFrom, periodTo } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = { shopId };
@@ -353,12 +353,20 @@ export class ShopService {
       where.network = method; // Using network field for method
     }
 
-    if (dateFrom || dateTo) {
+    // ✅ ОБНОВЛЕНО: Поддержка как dateFrom/dateTo, так и periodFrom/periodTo
+    if (dateFrom || dateTo || periodFrom || periodTo) {
       where.createdAt = {};
-      if (dateFrom) {
+      
+      // Приоритет у periodFrom/periodTo, если они указаны
+      if (periodFrom) {
+        where.createdAt.gte = new Date(periodFrom);
+      } else if (dateFrom) {
         where.createdAt.gte = new Date(dateFrom);
       }
-      if (dateTo) {
+      
+      if (periodTo) {
+        where.createdAt.lte = new Date(periodTo);
+      } else if (dateTo) {
         where.createdAt.lte = new Date(dateTo);
       }
     }
@@ -540,14 +548,15 @@ export class ShopService {
   async getShopPayoutStats(shopId: string): Promise<ShopPayoutStats> {
     console.log(`📊 Calculating shop payout stats for shop ${shopId}...`);
 
-    // Получаем настройки шлюзов для расчета комиссий
+    // ✅ НОВОЕ: Получаем магазин с новыми полями balance и totalPaidOut
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
       select: {
         id: true,
         name: true,
         username: true,
-        gatewaySettings: true,
+        balance: true,
+        totalPaidOut: true,
       },
     });
 
@@ -555,78 +564,15 @@ export class ShopService {
       throw new Error('Shop not found');
     }
 
-    // Парсим настройки шлюзов
-    let gatewaySettings: Record<string, any> = {};
-    if (shop.gatewaySettings) {
-      try {
-        gatewaySettings = JSON.parse(shop.gatewaySettings);
-        console.log(`📊 Shop ${shop.username} gateway settings:`, gatewaySettings);
-      } catch (error) {
-        console.error('Error parsing gateway settings:', error);
-        gatewaySettings = {};
-      }
-    }
-
-    // Получаем все оплаченные платежи магазина
-    const paidPayments = await prisma.payment.findMany({
-      where: {
-        shopId,
-        status: 'PAID',
-        gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
-        paidAt: { not: null },
-      },
-      select: {
-        id: true,
-        amount: true,
-        currency: true,
-        gateway: true,
-        merchantPaid: true,
-        paidAt: true,
-        createdAt: true,
-      },
-    });
-
-    console.log(`💰 Found ${paidPayments.length} paid payments for shop ${shop.username}`);
-
-    let totalPaidOut = 0;        // Уже выплачено мерчанту (с вычетом комиссии)
-    let availableBalance = 0;    // Доступно к выплате (без вычета комиссии)
-    let awaitingPayout = 0;      // Ожидает выплаты (с вычетом комиссии)
-
-    // Обрабатываем каждый платеж
-    for (const payment of paidPayments) {
-      try {
-        // Конвертируем в USDT
-        const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
-        
-        // Получаем displayName шлюза для поиска настроек
-        const gatewayDisplayName = this.getGatewayDisplayName(payment.gateway);
-        
-        // Определяем комиссию для данного шлюза (по умолчанию 10%)
-        const gatewayConfig = gatewaySettings[gatewayDisplayName];
-        const commission = gatewayConfig?.commission || 10;
-        const amountAfterCommission = amountUSDT * (1 - commission / 100);
-
-        console.log(`💰 Payment ${payment.id}: ${amountUSDT.toFixed(2)} USDT, gateway: ${gatewayDisplayName}, commission: ${commission}%, after commission: ${amountAfterCommission.toFixed(2)} USDT, merchantPaid: ${payment.merchantPaid}`);
-
-        if (payment.merchantPaid) {
-          // Платеж уже выплачен мерчанту
-          totalPaidOut += amountAfterCommission;
-        } else {
-          // Платеж ожидает выплаты
-          availableBalance += amountUSDT;               // Без вычета комиссии
-          awaitingPayout += amountAfterCommission;      // С вычетом комиссии
-        }
-      } catch (error) {
-        console.error(`Error processing payment ${payment.id}:`, error);
-      }
-    }
-
     // Получаем выплаты за текущий месяц
     const currentDate = new Date();
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    const thisMonthPayouts = await prisma.payout.findMany({
+    const thisMonthStats = await prisma.payout.aggregate({
+      _sum: {
+        amount: true,
+      },
       where: {
         shopId,
         createdAt: {
@@ -635,24 +581,22 @@ export class ShopService {
         },
         status: 'COMPLETED',
       },
-      select: {
-        amount: true,
-      },
     });
 
-    const thisMonth = thisMonthPayouts.reduce((sum, payout) => sum + payout.amount, 0);
+    const thisMonth = thisMonthStats._sum.amount || 0;
 
+    // ✅ НОВОЕ: Используем поля из базы данных напрямую
     const stats: ShopPayoutStats = {
-      availableBalance: Math.round(availableBalance * 100) / 100,     // Сумма без комиссии
-      totalPaidOut: Math.round(totalPaidOut * 100) / 100,             // Уже выплачено (с вычетом комиссии)
-      awaitingPayout: Math.round(awaitingPayout * 100) / 100,         // Ожидает выплаты (с вычетом комиссии)
-      thisMonth: Math.round(thisMonth * 100) / 100,                   // Выплачено в этом месяце
+      availableBalance: Math.round(shop.balance * 100) / 100,     // Текущий баланс (уже с учетом комиссии)
+      totalPaidOut: Math.round(shop.totalPaidOut * 100) / 100,    // Общая сумма выплат
+      awaitingPayout: Math.round(shop.balance * 100) / 100,       // Ожидает выплаты = текущий баланс
+      thisMonth: Math.round(thisMonth * 100) / 100,               // Выплачено в этом месяце
     };
 
     console.log(`📊 Shop ${shop.username} payout statistics calculated:`);
-    console.log(`   💵 Available balance: ${stats.availableBalance} USDT (before commission)`);
-    console.log(`   💰 Total paid out: ${stats.totalPaidOut} USDT (after commission)`);
-    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (after commission)`);
+    console.log(`   💵 Available balance: ${stats.availableBalance} USDT (current balance)`);
+    console.log(`   💰 Total paid out: ${stats.totalPaidOut} USDT (total payouts)`);
+    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (current balance)`);
     console.log(`   📅 This month: ${stats.thisMonth} USDT`);
 
     return stats;
@@ -760,16 +704,19 @@ export class ShopService {
       successfulPayments,
       totalRevenue,
       recentPayments,
+      dailyPayments,
     ] = await Promise.all([
       prisma.payment.count({
         where: {
           shopId,
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
           createdAt: { gte: startDate },
         },
       }),
       prisma.payment.count({
         where: {
           shopId,
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
           status: 'PAID',
           createdAt: { gte: startDate },
         },
@@ -777,16 +724,22 @@ export class ShopService {
       prisma.payment.findMany({
         where: {
           shopId,
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
           status: 'PAID',
           createdAt: { gte: startDate },
         },
         select: {
           amount: true,
           currency: true,
+          amountUSDT: true,
+          createdAt: true,
         },
       }),
       prisma.payment.findMany({
-        where: { shopId },
+        where: { 
+          shopId,
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+        },
         take: 10,
         orderBy: { createdAt: 'desc' },
         select: {
@@ -798,13 +751,36 @@ export class ShopService {
           createdAt: true,
         },
       }),
+      // Get all payments for daily statistics
+      prisma.payment.findMany({
+        where: {
+          shopId,
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+          createdAt: { gte: startDate },
+        },
+        select: {
+          status: true,
+          amountUSDT: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
 
+    // Calculate total revenue using amountUSDT for PAID payments
     let totalRevenueUSDT = 0;
     for (const payment of totalRevenue) {
-      const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
-      totalRevenueUSDT += usdtAmount;
+      if (payment.amountUSDT) {
+        totalRevenueUSDT += payment.amountUSDT;
+      } else {
+        // Fallback for old payments without amountUSDT
+        const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
+        totalRevenueUSDT += usdtAmount;
+      }
     }
+
+    // Generate daily statistics
+    const dailyStats = this.generateDailyStatistics(dailyPayments, startDate, now);
 
     const conversionRate = totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0;
 
@@ -813,6 +789,8 @@ export class ShopService {
       successfulPayments,
       totalRevenue: Math.round(totalRevenueUSDT * 100) / 100,
       conversionRate: Math.round(conversionRate * 100) / 100,
+      dailyRevenue: dailyStats.dailyRevenue,
+      dailyPayments: dailyStats.dailyPayments,
       recentPayments: recentPayments.map(payment => ({
         id: payment.id,
         gateway: payment.gateway,
@@ -822,5 +800,56 @@ export class ShopService {
         createdAt: payment.createdAt,
       })),
     };
+  }
+
+  // Helper method to generate daily statistics
+  private generateDailyStatistics(payments: any[], startDate: Date, endDate: Date): {
+    dailyRevenue: Array<{ date: string; amount: number }>;
+    dailyPayments: Array<{ date: string; count: number }>;
+  } {
+    // Create a map for each day in the period
+    const dailyData = new Map<string, { revenue: number; count: number }>();
+    
+    // Initialize all days in the period with zero values
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      dailyData.set(dateStr, { revenue: 0, count: 0 });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Process payments and group by date
+    for (const payment of payments) {
+      const paymentDate = payment.createdAt.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const dayData = dailyData.get(paymentDate);
+      
+      if (dayData) {
+        // Count all payments
+        dayData.count += 1;
+        
+        // Add revenue only for PAID payments
+        if (payment.status === 'PAID' && payment.amountUSDT) {
+          dayData.revenue += payment.amountUSDT;
+        }
+      }
+    }
+    
+    // Convert map to arrays
+    const dailyRevenue: Array<{ date: string; amount: number }> = [];
+    const dailyPayments: Array<{ date: string; count: number }> = [];
+    
+    for (const [date, data] of dailyData) {
+      dailyRevenue.push({
+        date,
+        amount: Math.round(data.revenue * 100) / 100, // Round to 2 decimal places
+      });
+      
+      dailyPayments.push({
+        date,
+        count: data.count,
+      });
+    }
+    
+    return { dailyRevenue, dailyPayments };
   }
 }

@@ -116,10 +116,21 @@ const gatewayIdValidator = Joi.string().custom((value, helpers) => {
   return value;
 });
 
-// ✅ ОБНОВЛЕНО: Gateway settings validation schema с minAmount
+// ✅ ОБНОВЛЕНО: Gateway settings validation schema с minAmount и maxAmount
 const gatewaySettingsSchema = Joi.object({
   commission: Joi.number().min(0).max(100).required(),
-  minAmount: Joi.number().min(0).optional(), // ✅ НОВОЕ: Минимальная сумма платежа
+  minAmount: Joi.number().min(0).optional(), // Минимальная сумма платежа
+  maxAmount: Joi.number().min(0).optional(), // ✅ НОВОЕ: Максимальная сумма платежа
+}).custom((value, helpers) => {
+  // ✅ НОВОЕ: Проверяем, что maxAmount больше minAmount
+  if (value.minAmount !== undefined && value.maxAmount !== undefined) {
+    if (value.maxAmount <= value.minAmount) {
+      return helpers.error('any.invalid', { 
+        message: 'Maximum amount must be greater than minimum amount' 
+      });
+    }
+  }
+  return value;
 });
 
 // Wallet settings validation schema

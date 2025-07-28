@@ -5,7 +5,7 @@ import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
 import { telegramBotService } from './telegramBotService';
-import { PaymentLinkService } from './paymentLinkService';
+import { currencyService } from './currencyService';
 import { loggerService } from './loggerService';
 
 export class WebhookService {
@@ -14,7 +14,6 @@ export class WebhookService {
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
   private klymeService: KlymeService;
-  private paymentLinkService: PaymentLinkService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -22,33 +21,233 @@ export class WebhookService {
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
     this.klymeService = new KlymeService();
-    this.paymentLinkService = new PaymentLinkService();
   }
 
-  // ✅ ОБНОВЛЕНО: Plisio webhook processing with tx_urls support
+  // ✅ НОВОЕ: Универсальный метод для обновления статуса платежа с управлением балансом
+  private async updatePaymentStatus(
+    paymentId: string,
+    newStatus: string,
+    additionalData?: {
+      failureMessage?: string;
+      txUrls?: string[];
+      cardLast4?: string;
+      paymentMethod?: string;
+      bankId?: string;
+      remitterIban?: string;
+      remitterName?: string;
+      chargebackAmount?: number;
+    }
+  ): Promise<void> {
+    console.log(`🔄 Updating payment ${paymentId} status to ${newStatus}`);
+
+    await prisma.$transaction(async (tx) => {
+      // Получаем текущий платеж с информацией о магазине
+      const currentPayment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              balance: true,
+              totalPaidOut: true,
+              settings: {
+                select: {
+                  webhookUrl: true,
+                  webhookEvents: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!currentPayment) {
+        throw new Error(`Payment ${paymentId} not found`);
+      }
+
+      const oldStatus = currentPayment.status;
+      const shop = currentPayment.shop;
+
+      console.log(`💰 Payment ${paymentId}: ${oldStatus} -> ${newStatus}`);
+      console.log(`🏪 Shop ${shop.username} current balance: ${shop.balance} USDT`);
+
+      // Подготавливаем данные для обновления платежа
+      const paymentUpdateData: any = {
+        status: newStatus.toUpperCase(),
+        updatedAt: new Date(),
+        statusChangedBy: 'system',
+        statusChangedAt: new Date(),
+      };
+
+      // Добавляем дополнительные данные если они есть
+      if (additionalData?.failureMessage) {
+        paymentUpdateData.failureMessage = additionalData.failureMessage;
+      }
+      if (additionalData?.txUrls) {
+        paymentUpdateData.txUrls = JSON.stringify(additionalData.txUrls);
+      }
+      if (additionalData?.cardLast4) {
+        paymentUpdateData.cardLast4 = additionalData.cardLast4;
+      }
+      if (additionalData?.paymentMethod) {
+        paymentUpdateData.paymentMethod = additionalData.paymentMethod;
+      }
+      if (additionalData?.bankId) {
+        paymentUpdateData.bankId = additionalData.bankId;
+      }
+      if (additionalData?.remitterIban) {
+        paymentUpdateData.remitterIban = additionalData.remitterIban;
+      }
+      if (additionalData?.remitterName) {
+        paymentUpdateData.remitterName = additionalData.remitterName;
+      }
+
+      // Подготавливаем данные для обновления баланса магазина
+      let newBalance = shop.balance;
+      let balanceChangeReason = '';
+
+      // ✅ ЛОГИКА УПРАВЛЕНИЯ БАЛАНСОМ
+      
+      // 1. Если платеж становится PAID (и раньше не был PAID)
+      if (newStatus.toUpperCase() === 'PAID' && oldStatus !== 'PAID') {
+        // Конвертируем сумму в USDT
+        const amountUSDT = await currencyService.convertToUSDT(
+          currentPayment.amount,
+          currentPayment.currency
+        );
+
+        // Добавляем к балансу
+        newBalance += amountUSDT;
+        balanceChangeReason = `+${amountUSDT.toFixed(6)} USDT (payment became PAID)`;
+
+        // Сохраняем amountUSDT в платеже
+        paymentUpdateData.amountUSDT = amountUSDT;
+        paymentUpdateData.paidAt = new Date();
+
+        console.log(`💰 Converting ${currentPayment.amount} ${currentPayment.currency} -> ${amountUSDT.toFixed(6)} USDT`);
+        console.log(`💰 Adding to balance: ${shop.balance} + ${amountUSDT.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
+      }
+
+      // 2. Если платеж был PAID и становится не-PAID
+      else if (oldStatus === 'PAID' && newStatus.toUpperCase() !== 'PAID') {
+        const amountUSDT = currentPayment.amountUSDT;
+        
+        if (amountUSDT) {
+          // Вычитаем из баланса
+          newBalance -= amountUSDT;
+          balanceChangeReason = `-${amountUSDT.toFixed(6)} USDT (payment no longer PAID)`;
+
+          // Очищаем amountUSDT
+          paymentUpdateData.amountUSDT = null;
+          paymentUpdateData.paidAt = null;
+
+          console.log(`💰 Removing from balance: ${shop.balance} - ${amountUSDT.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
+        }
+      }
+
+      // 3. Специальная обработка CHARGEBACK
+      if (newStatus.toUpperCase() === 'CHARGEBACK') {
+        const chargebackAmount = additionalData?.chargebackAmount || 0;
+        
+        if (chargebackAmount > 0) {
+          newBalance -= chargebackAmount;
+          balanceChangeReason += ` and -${chargebackAmount.toFixed(6)} USDT (chargeback penalty)`;
+          paymentUpdateData.chargebackAmount = chargebackAmount;
+
+          console.log(`💸 Additional chargeback penalty: -${chargebackAmount.toFixed(6)} USDT`);
+          console.log(`💰 Final balance after chargeback: ${newBalance.toFixed(6)} USDT`);
+        }
+      }
+
+      // Обновляем платеж
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: paymentUpdateData,
+      });
+
+      // Обновляем баланс магазина (если он изменился)
+      if (newBalance !== shop.balance) {
+        await tx.shop.update({
+          where: { id: shop.id },
+          data: { balance: newBalance },
+        });
+
+        console.log(`✅ Shop ${shop.username} balance updated: ${shop.balance.toFixed(6)} -> ${newBalance.toFixed(6)} USDT`);
+        console.log(`📝 Reason: ${balanceChangeReason}`);
+      }
+
+      // Логируем изменение статуса
+      await tx.webhookLog.create({
+        data: {
+          paymentId: paymentId,
+          shopId: shop.id,
+          event: `webhook_status_change_${newStatus.toLowerCase()}`,
+          statusCode: 200,
+          responseBody: JSON.stringify({
+            oldStatus,
+            newStatus: newStatus.toUpperCase(),
+            balanceChange: balanceChangeReason || 'no balance change',
+            oldBalance: shop.balance,
+            newBalance: newBalance,
+            amountUSDT: paymentUpdateData.amountUSDT,
+            additionalData,
+            timestamp: new Date().toISOString(),
+          }),
+        },
+      });
+
+      // Отправляем webhook мерчанту
+      await this.sendShopWebhook(
+        { ...currentPayment, ...updatedPayment, shop },
+        newStatus.toUpperCase()
+      );
+
+      // Отправляем Telegram уведомление
+      await this.sendPaymentStatusNotification(
+        { ...currentPayment, ...updatedPayment },
+        newStatus.toUpperCase()
+      );
+    });
+  }
+
+  // Обработка webhook от Plisio
   async processPlisioWebhook(webhookData: any): Promise<void> {
-    console.log('Processing Plisio webhook:', webhookData);
+    console.log('🔄 Processing Plisio webhook:', webhookData);
 
     try {
       const result = await this.plisioService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in Plisio webhook');
+        throw new Error('No payment ID in Plisio webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for Plisio webhook: ${result.paymentId}`);
         return;
       }
 
-      // ✅ НОВОЕ: Передаем tx_urls в updatePaymentStatus
-      await this.updatePaymentStatus(
-        result.paymentId, 
-        result.status, 
-        'plisio', 
-        webhookData,
-        undefined, // failureMessage
-        undefined, // additionalInfo
-        result.txUrls // ✅ НОВОЕ: tx_urls
+      console.log(`📊 Plisio webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус с дополнительными данными
+      await this.updatePaymentStatus(payment.id, result.status, {
+        txUrls: result.txUrls,
+      });
+
+      loggerService.logWebhookProcessed(
+        'plisio',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
       );
-      
-      loggerService.logWebhookProcessed('plisio', result.paymentId, 'PENDING', result.status, webhookData);
+
     } catch (error) {
       console.error('Error processing Plisio webhook:', error);
       loggerService.logWebhookError('plisio', error, webhookData);
@@ -56,30 +255,42 @@ export class WebhookService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Plisio Gateway webhook processing with tx_urls support
+  // Обработка webhook от Plisio Gateway
   async processPlisioGatewayWebhook(webhookData: any): Promise<void> {
-    console.log('Processing Plisio Gateway webhook:', webhookData);
+    console.log('🔄 Processing Plisio Gateway webhook:', webhookData);
 
     try {
       const result = await this.plisioService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in Plisio Gateway webhook');
+        throw new Error('No payment ID in Plisio Gateway webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for Plisio Gateway webhook: ${result.paymentId}`);
         return;
       }
 
-      // ✅ НОВОЕ: Передаем tx_urls в updatePaymentStatus
-      await this.updatePaymentStatus(
-        result.paymentId, 
-        result.status, 
-        'plisio', 
-        webhookData,
-        undefined, // failureMessage
-        undefined, // additionalInfo
-        result.txUrls // ✅ НОВОЕ: tx_urls
+      console.log(`📊 Plisio Gateway webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус с дополнительными данными
+      await this.updatePaymentStatus(payment.id, result.status, {
+        txUrls: result.txUrls,
+      });
+
+      loggerService.logWebhookProcessed(
+        'plisio_gateway',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
       );
-      
-      loggerService.logWebhookProcessed('plisio_gateway', result.paymentId, 'PENDING', result.status, webhookData);
+
     } catch (error) {
       console.error('Error processing Plisio Gateway webhook:', error);
       loggerService.logWebhookError('plisio_gateway', error, webhookData);
@@ -87,29 +298,44 @@ export class WebhookService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Rapyd webhook processing with failure_message support
+  // Обработка webhook от Rapyd
   async processRapydWebhook(webhookData: any): Promise<void> {
-    console.log('Processing Rapyd webhook:', webhookData);
+    console.log('🔄 Processing Rapyd webhook:', webhookData);
 
     try {
       const result = await this.rapydService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in Rapyd webhook');
+        throw new Error('No payment ID in Rapyd webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for Rapyd webhook: ${result.paymentId}`);
         return;
       }
 
-      // ✅ НОВОЕ: Передаем failure_message и дополнительную информацию
-      await this.updatePaymentStatus(
-        result.paymentId, 
-        result.status, 
-        'rapyd', 
-        webhookData,
-        result.failureMessage, // ✅ НОВОЕ: failure_message
-        result.additionalInfo   // ✅ НОВОЕ: дополнительная информация
+      console.log(`📊 Rapyd webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус с дополнительными данными
+      await this.updatePaymentStatus(payment.id, result.status, {
+        failureMessage: result.failureMessage,
+        cardLast4: result.additionalInfo?.cardLast4,
+        paymentMethod: result.additionalInfo?.paymentMethod,
+      });
+
+      loggerService.logWebhookProcessed(
+        'rapyd',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
       );
-      
-      loggerService.logWebhookProcessed('rapyd', result.paymentId, 'PENDING', result.status, webhookData);
+
     } catch (error) {
       console.error('Error processing Rapyd webhook:', error);
       loggerService.logWebhookError('rapyd', error, webhookData);
@@ -117,20 +343,44 @@ export class WebhookService {
     }
   }
 
+  // Обработка webhook от Noda
   async processNodaWebhook(webhookData: any): Promise<void> {
-    console.log('Processing Noda webhook:', webhookData);
+    console.log('🔄 Processing Noda webhook:', webhookData);
 
     try {
       const result = await this.nodaService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in Noda webhook');
+        throw new Error('No payment ID in Noda webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for Noda webhook: ${result.paymentId}`);
         return;
       }
 
-      await this.updatePaymentStatus(result.paymentId, result.status, 'noda', webhookData, undefined, result.additionalInfo);
-      
-      loggerService.logWebhookProcessed('noda', result.paymentId, 'PENDING', result.status, webhookData);
+      console.log(`📊 Noda webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус с дополнительными данными
+      await this.updatePaymentStatus(payment.id, result.status, {
+        bankId: result.additionalInfo?.bankId,
+        remitterIban: result.additionalInfo?.remitterIban,
+        remitterName: result.additionalInfo?.remitterName,
+      });
+
+      loggerService.logWebhookProcessed(
+        'noda',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
+      );
+
     } catch (error) {
       console.error('Error processing Noda webhook:', error);
       loggerService.logWebhookError('noda', error, webhookData);
@@ -138,20 +388,40 @@ export class WebhookService {
     }
   }
 
+  // Обработка webhook от CoinToPay
   async processCoinToPayWebhook(webhookData: any): Promise<void> {
-    console.log('Processing CoinToPay webhook:', webhookData);
+    console.log('🔄 Processing CoinToPay webhook:', webhookData);
 
     try {
       const result = await this.coinToPayService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in CoinToPay webhook');
+        throw new Error('No payment ID in CoinToPay webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for CoinToPay webhook: ${result.paymentId}`);
         return;
       }
 
-      await this.updatePaymentStatus(result.paymentId, result.status, 'cointopay', webhookData);
-      
-      loggerService.logWebhookProcessed('cointopay', result.paymentId, 'PENDING', result.status, webhookData);
+      console.log(`📊 CoinToPay webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус
+      await this.updatePaymentStatus(payment.id, result.status);
+
+      loggerService.logWebhookProcessed(
+        'cointopay',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
+      );
+
     } catch (error) {
       console.error('Error processing CoinToPay webhook:', error);
       loggerService.logWebhookError('cointopay', error, webhookData);
@@ -159,21 +429,42 @@ export class WebhookService {
     }
   }
 
+  // Обработка webhook от KLYME
   async processKlymeWebhook(webhookData: any): Promise<void> {
-    console.log('Processing KLYME webhook:', webhookData);
+    console.log('🔄 Processing KLYME webhook:', webhookData);
 
     try {
       const result = await this.klymeService.processWebhook(webhookData);
       
       if (!result.paymentId) {
-        console.error('No payment ID found in KLYME webhook');
+        throw new Error('No payment ID in KLYME webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for KLYME webhook: ${result.paymentId}`);
         return;
       }
 
-      const gatewayName = result.region ? `klyme_${result.region.toLowerCase()}` : 'klyme_eu';
-      await this.updatePaymentStatus(result.paymentId, result.status, gatewayName, webhookData, undefined, result.additionalInfo);
-      
-      loggerService.logWebhookProcessed('klyme', result.paymentId, 'PENDING', result.status, webhookData);
+      console.log(`📊 KLYME webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус с дополнительными данными
+      await this.updatePaymentStatus(payment.id, result.status, {
+        paymentMethod: result.additionalInfo?.payment_method,
+      });
+
+      loggerService.logWebhookProcessed(
+        'klyme',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
+      );
+
     } catch (error) {
       console.error('Error processing KLYME webhook:', error);
       loggerService.logWebhookError('klyme', error, webhookData);
@@ -181,154 +472,7 @@ export class WebhookService {
     }
   }
 
-  // ✅ ОБНОВЛЕНО: Updated updatePaymentStatus method with tx_urls support
-  private async updatePaymentStatus(
-    paymentId: string, 
-    newStatus: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED', 
-    gateway: string, 
-    webhookData: any,
-    failureMessage?: string, // ✅ НОВОЕ: failure_message
-    additionalInfo?: any,    // ✅ НОВОЕ: дополнительная информация
-    txUrls?: string[]        // ✅ НОВОЕ: transaction URLs
-  ): Promise<void> {
-    console.log(`🔄 Updating payment ${paymentId} status to ${newStatus} from ${gateway} webhook`);
-    
-    if (failureMessage) {
-      console.log(`💥 Payment ${paymentId} failure message: ${failureMessage}`);
-    }
-    
-    if (txUrls && txUrls.length > 0) {
-      console.log(`🔗 Payment ${paymentId} transaction URLs:`, txUrls);
-    }
-
-    // Find payment by gatewayOrderId (8digits-8digits format)
-    const payment = await prisma.payment.findFirst({
-      where: {
-        gatewayOrderId: paymentId,
-        gateway: gateway,
-      },
-      include: {
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            settings: {
-              select: {
-                webhookUrl: true,
-                webhookEvents: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!payment) {
-      console.error(`Payment not found for gatewayOrderId: ${paymentId} and gateway: ${gateway}`);
-      return;
-    }
-
-    const oldStatus = payment.status;
-    
-    // Only update if status actually changed
-    if (oldStatus === newStatus) {
-      console.log(`Payment ${payment.id} status unchanged (${newStatus})`);
-      return;
-    }
-
-    console.log(`Payment ${payment.id} status change: ${oldStatus} -> ${newStatus}`);
-
-    // ✅ НОВОЕ: Подготавливаем данные для обновления с failure_message и tx_urls
-    const updateData: any = {
-      status: newStatus,
-      updatedAt: new Date(),
-    };
-
-    // ✅ НОВОЕ: Добавляем failure_message если есть
-    if (failureMessage) {
-      updateData.failureMessage = failureMessage;
-      console.log(`💾 Saving failure message: ${failureMessage}`);
-    }
-
-    // ✅ НОВОЕ: Добавляем tx_urls если есть
-    if (txUrls && txUrls.length > 0) {
-      updateData.txUrls = JSON.stringify(txUrls);
-      console.log(`💾 Saving transaction URLs: ${JSON.stringify(txUrls)}`);
-    }
-
-    // Set paidAt if payment became successful
-    if (newStatus === 'PAID' && oldStatus !== 'PAID') {
-      updateData.paidAt = new Date();
-    }
-
-    // ✅ НОВОЕ: Обновляем дополнительную информацию если есть
-    if (additionalInfo) {
-      if (additionalInfo.cardLast4) {
-        updateData.cardLast4 = additionalInfo.cardLast4;
-      }
-      if (additionalInfo.paymentMethod) {
-        updateData.paymentMethod = additionalInfo.paymentMethod;
-      }
-      if (additionalInfo.bankId) {
-        updateData.bankId = additionalInfo.bankId;
-      }
-      if (additionalInfo.remitterIban) {
-        updateData.remitterIban = additionalInfo.remitterIban;
-      }
-      if (additionalInfo.remitterName) {
-        updateData.remitterName = additionalInfo.remitterName;
-      }
-    }
-
-    // Update payment in database
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: updateData,
-    });
-
-    // Handle payment link counter update for successful payments
-    if (newStatus === 'PAID' && oldStatus !== 'PAID') {
-      try {
-        await this.paymentLinkService.handleSuccessfulPayment(payment.id);
-      } catch (linkError) {
-        console.error('Failed to update payment link counter:', linkError);
-      }
-    }
-
-    // Log webhook
-    await prisma.webhookLog.create({
-      data: {
-        paymentId: payment.id,
-        shopId: payment.shopId,
-        event: `${gateway}_webhook_${newStatus.toLowerCase()}`,
-        statusCode: 200,
-        responseBody: JSON.stringify({
-          oldStatus,
-          newStatus,
-          failureMessage, // ✅ НОВОЕ: Логируем failure_message
-          txUrls,         // ✅ НОВОЕ: Логируем tx_urls
-          webhookData,
-        }),
-      },
-    });
-
-    // Send webhook to shop
-    await this.sendShopWebhook(payment, newStatus);
-
-    // Send Telegram notification
-    await this.sendPaymentStatusNotification(payment, newStatus);
-
-    console.log(`✅ Payment ${payment.id} updated successfully: ${oldStatus} -> ${newStatus}`);
-    
-    if (failureMessage) {
-      console.log(`💾 Failure message saved: ${failureMessage}`);
-    }
-    
-    if (txUrls && txUrls.length > 0) {
-      console.log(`💾 Transaction URLs saved: ${txUrls.length} URLs`);
-    }
-  }
-
+  // Отправка webhook мерчанту
   private async sendShopWebhook(payment: any, status: string): Promise<void> {
     const startTime = Date.now();
     
@@ -341,12 +485,15 @@ export class WebhookService {
         return;
       }
 
-      // Check if this event type is enabled
+      // Определяем тип события
       const eventName = status === 'PAID' ? 'payment.success' : 
                        status === 'FAILED' ? 'payment.failed' : 
-                       status === 'EXPIRED' ? 'payment.failed' : 'payment.pending';
+                       status === 'EXPIRED' ? 'payment.failed' : 
+                       status === 'CHARGEBACK' ? 'payment.failed' :
+                       status === 'REFUND' ? 'payment.failed' :
+                       'payment.pending';
 
-      // Parse webhook events (handle JSON for MySQL)
+      // Проверяем, включен ли этот тип события
       let webhookEvents: string[] = [];
       if (settings.webhookEvents) {
         try {
@@ -364,18 +511,7 @@ export class WebhookService {
         return;
       }
 
-      // ✅ НОВОЕ: Парсим tx_urls для отправки в webhook
-      let txUrls: string[] | undefined;
-      if (payment.txUrls) {
-        try {
-          txUrls = JSON.parse(payment.txUrls);
-        } catch (error) {
-          console.error('Error parsing tx_urls for webhook:', error);
-          txUrls = undefined;
-        }
-      }
-
-      // Prepare webhook payload for shop
+      // Подготавливаем payload для webhook
       const webhookPayload = {
         event: eventName,
         payment: {
@@ -388,14 +524,14 @@ export class WebhookService {
           status: status.toLowerCase(),
           customer_email: payment.customerEmail,
           customer_name: payment.customerName,
-          failure_message: payment.failureMessage, // ✅ НОВОЕ: Добавляем failure_message в webhook
-          tx_urls: txUrls, // ✅ НОВОЕ: Добавляем tx_urls в webhook
+          failure_message: payment.failureMessage,
+          tx_urls: payment.txUrls ? JSON.parse(payment.txUrls) : null,
           created_at: payment.createdAt,
-          updated_at: new Date(),
+          updated_at: payment.updatedAt,
         },
       };
 
-      // Send webhook to shop
+      // Отправляем webhook
       const response = await fetch(settings.webhookUrl, {
         method: 'POST',
         headers: {
@@ -408,7 +544,7 @@ export class WebhookService {
       const responseTime = Date.now() - startTime;
       const responseText = response.ok ? 'Success' : await response.text();
 
-      // Log shop webhook
+      // Логируем отправку webhook
       loggerService.logShopWebhookSent(
         payment.shopId,
         settings.webhookUrl,
@@ -418,12 +554,12 @@ export class WebhookService {
         webhookPayload
       );
 
-      console.log(`Shop webhook sent to ${settings.webhookUrl} with status ${response.status} (${responseTime}ms)`);
+      console.log(`📤 Shop webhook sent to ${settings.webhookUrl} with status ${response.status} (${responseTime}ms)`);
 
     } catch (error) {
       console.error('Failed to send shop webhook:', error);
       
-      // Log shop webhook error
+      // Логируем ошибку webhook
       loggerService.logShopWebhookError(
         payment.shopId,
         payment.shop?.settings?.webhookUrl || 'unknown',
@@ -434,13 +570,17 @@ export class WebhookService {
     }
   }
 
+  // Отправка Telegram уведомления
   private async sendPaymentStatusNotification(payment: any, status: string): Promise<void> {
     try {
-      const statusMap: Record<string, 'created' | 'paid' | 'failed' | 'expired'> = {
+      const statusMap: Record<string, 'created' | 'paid' | 'failed' | 'expired' | 'refund' | 'chargeback' | 'processing'> = {
         'PENDING': 'created',
+        'PROCESSING': 'processing',
         'PAID': 'paid',
         'FAILED': 'failed',
         'EXPIRED': 'expired',
+        'REFUND': 'refund',
+        'CHARGEBACK': 'chargeback',
       };
 
       const telegramStatus = statusMap[status];

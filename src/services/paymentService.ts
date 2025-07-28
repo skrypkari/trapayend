@@ -9,6 +9,7 @@ import { TestGatewayService } from './gateways/testGatewayService';
 import { telegramBotService } from './telegramBotService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
+import { currencyService } from './currencyService';
 
 export class PaymentService {
   private plisioService: PlisioService;
@@ -167,9 +168,13 @@ export class PaymentService {
     }
   }
 
-  // ✅ НОВОЕ: Проверка минимальной суммы платежа
-  private async checkMinimumAmount(shopId: string, gatewayName: string, amount: number): Promise<void> {
-    console.log(`💰 Checking minimum amount for shop ${shopId}, gateway ${gatewayName}, amount: ${amount}`);
+  // ✅ ОБНОВЛЕНО: Проверка минимальной и максимальной суммы платежа
+  private async checkAmountLimits(shopId: string, gatewayName: string, amount: number, currency: string): Promise<void> {
+    console.log(`💰 Checking amount limits for shop ${shopId}, gateway ${gatewayName}, amount: ${amount} ${currency}`);
+
+    // ✅ НОВОЕ: Конвертируем сумму в USDT для проверки лимитов
+    const amountUSDT = await currencyService.convertToUSDT(amount, currency);
+    console.log(`💱 Converted ${amount} ${currency} to ${amountUSDT.toFixed(6)} USDT for limit checking`);
 
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
@@ -200,25 +205,43 @@ export class PaymentService {
 
     // Получаем displayName шлюза
     const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
-    console.log(`💰 Checking settings for gateway: ${gatewayName} -> ${gatewayDisplayName}`);
+    console.log(`💰 Checking amount limits for gateway: ${gatewayName} -> ${gatewayDisplayName}`);
 
     // Проверяем настройки для данного шлюза
     const settings = gatewaySettings[gatewayDisplayName];
     if (settings && settings.minAmount !== undefined) {
       const minAmount = settings.minAmount;
-      console.log(`💰 Gateway ${gatewayDisplayName} minimum amount: ${minAmount}`);
+      console.log(`💰 Gateway ${gatewayDisplayName} minimum amount: ${minAmount} USDT`);
       
-      if (amount < minAmount) {
-        console.error(`❌ Amount ${amount} is below minimum ${minAmount} for gateway ${gatewayDisplayName}`);
+      if (amountUSDT < minAmount) {
+        console.error(`❌ Amount ${amountUSDT.toFixed(6)} USDT is below minimum ${minAmount} USDT for gateway ${gatewayDisplayName}`);
         throw new Error(
-          `Payment amount ${amount} is below the minimum required amount of ${minAmount} for ${gatewayDisplayName} gateway. ` +
-          `Please increase the amount to at least ${minAmount}.`
+          `Payment amount ${amount} ${currency} (${amountUSDT.toFixed(2)} USDT) is below the minimum required amount of ${minAmount} USDT for ${gatewayDisplayName} gateway. ` +
+          `Please increase the amount.`
         );
       }
       
-      console.log(`✅ Amount ${amount} meets minimum requirement of ${minAmount} for gateway ${gatewayDisplayName}`);
+      console.log(`✅ Amount ${amountUSDT.toFixed(6)} USDT meets minimum requirement of ${minAmount} USDT for gateway ${gatewayDisplayName}`);
     } else {
       console.log(`💰 No minimum amount set for gateway ${gatewayDisplayName}`);
+    }
+
+    // ✅ НОВОЕ: Проверяем максимальную сумму
+    if (settings && settings.maxAmount !== undefined) {
+      const maxAmount = settings.maxAmount;
+      console.log(`💰 Gateway ${gatewayDisplayName} maximum amount: ${maxAmount} USDT`);
+      
+      if (amountUSDT > maxAmount) {
+        console.error(`❌ Amount ${amountUSDT.toFixed(6)} USDT exceeds maximum ${maxAmount} USDT for gateway ${gatewayDisplayName}`);
+        throw new Error(
+          `Payment amount ${amount} ${currency} (${amountUSDT.toFixed(2)} USDT) exceeds the maximum allowed amount of ${maxAmount} USDT for ${gatewayDisplayName} gateway. ` +
+          `Please reduce the amount.`
+        );
+      }
+      
+      console.log(`✅ Amount ${amountUSDT.toFixed(6)} USDT meets maximum requirement of ${maxAmount} USDT for gateway ${gatewayDisplayName}`);
+    } else {
+      console.log(`💰 No maximum amount set for gateway ${gatewayDisplayName}`);
     }
   }
 
@@ -347,8 +370,8 @@ export class PaymentService {
 
     await this.checkGatewayPermission(shop.id, gatewayName);
 
-    // ✅ НОВОЕ: Проверяем минимальную сумму платежа
-    await this.checkMinimumAmount(shop.id, gatewayName, amount);
+    // ✅ ОБНОВЛЕНО: Проверяем минимальную и максимальную сумму платежа
+    await this.checkAmountLimits(shop.id, gatewayName, amount, currency || 'USD');
 
     const gatewayOrderId = await this.generateGatewayOrderId();
     console.log(`🎯 Generated unique gateway order_id: ${gatewayOrderId} (8digits-8digits format for ${gatewayName})`);

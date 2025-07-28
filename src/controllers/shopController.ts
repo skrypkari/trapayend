@@ -246,7 +246,7 @@ export class ShopController {
         });
       }
 
-      const { page = 1, limit = 20, status, method, dateFrom, dateTo } = req.query;
+      const { page = 1, limit = 20, status, method, dateFrom, dateTo, periodFrom, periodTo } = req.query;
       
       const result = await this.shopService.getPayouts(shopId, {
         page: Number(page),
@@ -255,6 +255,8 @@ export class ShopController {
         method: method as string,
         dateFrom: dateFrom as string,
         dateTo: dateTo as string,
+        periodFrom: periodFrom as string, // ✅ НОВОЕ: Передаем periodFrom
+        periodTo: periodTo as string,     // ✅ НОВОЕ: Передаем periodTo
       });
       
       res.json({

@@ -20,78 +20,26 @@ export class AdminService {
   async getPayoutStats(): Promise<PayoutStats> {
     console.log('📊 Calculating payout statistics...');
 
-    // Получаем все платежи со статусом PAID
-    const paidPayments = await prisma.payment.findMany({
-      where: {
-        status: 'PAID',
-        paidAt: { not: null },
+    // ✅ НОВОЕ: Используем новые поля balance и totalPaidOut для быстрого расчета
+    const shopStats = await prisma.shop.aggregate({
+      _sum: {
+        balance: true,
+        totalPaidOut: true,
       },
-      select: {
-        id: true,
-        shopId: true,
-        amount: true,
-        currency: true,
-        merchantPaid: true,
-        paidAt: true,
-        createdAt: true,
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            gatewaySettings: true,
-          },
-        },
+      where: {
+        status: 'ACTIVE', // Учитываем только активные магазины
       },
     });
-
-    console.log(`💰 Found ${paidPayments.length} paid payments`);
-
-    let totalPayoutUSDT = 0;      // Сумма всех оплаченных мерчанту транзакций, с вычетом комиссии
-    let awaitingPayoutUSDT = 0;   // Сумма всех ожидающих выплат, с вычетом комиссии
-    let availableBalanceUSDT = 0; // Сумма всех ожидающих выплат без вычета комиссии
-
-    // Обрабатываем каждый платеж
-    for (const payment of paidPayments) {
-      try {
-        // Конвертируем в USDT
-        const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
-        
-        // Получаем настройки комиссий мерчанта
-        let gatewaySettings: Record<string, any> = {};
-        if (payment.shop.gatewaySettings) {
-          try {
-            gatewaySettings = JSON.parse(payment.shop.gatewaySettings);
-          } catch (error) {
-            console.error(`Error parsing gateway settings for shop ${payment.shopId}:`, error);
-          }
-        }
-
-        // Определяем комиссию (по умолчанию 10%)
-        const commission = gatewaySettings.commission || 10;
-        const amountAfterCommission = amountUSDT * (1 - commission / 100);
-
-        if (payment.merchantPaid) {
-          // Платеж уже выплачен мерчанту
-          totalPayoutUSDT += amountAfterCommission;
-          console.log(`✅ Payment ${payment.id}: ${amountAfterCommission.toFixed(2)} USDT (paid out)`);
-        } else {
-          // Платеж ожидает выплаты
-          awaitingPayoutUSDT += amountAfterCommission;      // С вычетом комиссии
-          availableBalanceUSDT += amountUSDT;               // Без вычета комиссии
-          console.log(`⏳ Payment ${payment.id}: ${amountAfterCommission.toFixed(2)} USDT (pending payout)`);
-        }
-      } catch (error) {
-        console.error(`Error processing payment ${payment.id}:`, error);
-      }
-    }
 
     // Получаем выплаты за текущий месяц
     const currentDate = new Date();
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    const thisMonthPayouts = await prisma.payout.findMany({
+    const thisMonthStats = await prisma.payout.aggregate({
+      _sum: {
+        amount: true,
+      },
       where: {
         createdAt: {
           gte: startOfMonth,
@@ -99,25 +47,24 @@ export class AdminService {
         },
         status: 'COMPLETED',
       },
-      select: {
-        amount: true,
-      },
     });
 
-    const thisMonthAmount = thisMonthPayouts.reduce((sum, payout) => sum + payout.amount, 0);
+    const totalPaidOut = shopStats._sum.totalPaidOut || 0;
+    const awaitingPayout = shopStats._sum.balance || 0;
+    const thisMonth = thisMonthStats._sum.amount || 0;
 
     // ✅ ИСПРАВЛЕНО: Возвращаем правильную структуру PayoutStats
     const stats: PayoutStats = {
-      totalPayout: Math.round(totalPayoutUSDT * 100) / 100,           // Сумма всех оплаченных мерчанту транзакций, с вычетом комиссии
-      awaitingPayout: Math.round(awaitingPayoutUSDT * 100) / 100,     // Сумма всех ожидающих выплат, с вычетом комиссии
-      thisMonth: Math.round(thisMonthAmount * 100) / 100,             // Сумма всех выплат в текущем месяце
-      availableBalance: Math.round(availableBalanceUSDT * 100) / 100, // Сумма всех ожидающих выплат без вычета комиссии
+      totalPayout: Math.round(totalPaidOut * 100) / 100,      // Общая сумма выплат всем мерчантам
+      awaitingPayout: Math.round(awaitingPayout * 100) / 100, // Общий баланс всех мерчантов
+      thisMonth: Math.round(thisMonth * 100) / 100,           // Выплаты за текущий месяц
+      availableBalance: Math.round(awaitingPayout * 100) / 100, // Доступный баланс = awaiting payout
     };
 
     console.log('📊 Payout statistics calculated:');
-    console.log(`   💰 Total payout: ${stats.totalPayout} USDT (paid to merchants)`);
-    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (after commission)`);
-    console.log(`   💵 Available balance: ${stats.availableBalance} USDT (before commission)`);
+    console.log(`   💰 Total payout: ${stats.totalPayout} USDT (total paid to merchants)`);
+    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (total merchant balances)`);
+    console.log(`   💵 Available balance: ${stats.availableBalance} USDT (same as awaiting)`);
     console.log(`   📅 This month: ${stats.thisMonth} USDT`);
 
     return stats;
@@ -563,7 +510,134 @@ export class AdminService {
 
     console.log('📊 Getting merchants awaiting payout with filters:', filters);
 
-    // Получаем всех мерчантов с неоплаченными платежами
+    // ✅ НОВОЕ: Получаем мерчантов с положительным балансом
+    const whereConditions: any = {
+      balance: { gt: 0 }, // Только мерчанты с положительным балансом
+      status: 'ACTIVE',   // Только активные мерчанты
+    };
+
+    // Применяем фильтры
+    if (minAmount) {
+      whereConditions.balance.gte = minAmount;
+    }
+
+    if (search) {
+      whereConditions.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { username: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [merchants, total] = await Promise.all([
+      prisma.shop.findMany({
+        where: whereConditions,
+        skip,
+        take: limit,
+        orderBy: { balance: 'desc' }, // Сортируем по убыванию баланса
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          telegram: true,
+          shopUrl: true,
+          balance: true,
+          totalPaidOut: true,
+          usdtPolygonWallet: true,
+          usdtTrcWallet: true,
+          usdtErcWallet: true,
+          usdcPolygonWallet: true,
+          createdAt: true,
+        },
+      }),
+      prisma.shop.count({ where: whereConditions }),
+    ]);
+
+    console.log(`💰 Found ${merchants.length} merchants with positive balance`);
+
+    // ✅ НОВОЕ: Получаем дополнительную статистику для каждого мерчанта
+    const merchantsWithStats = await Promise.all(
+      merchants.map(async (merchant) => {
+        // Получаем статистику платежей для этого мерчанта
+        const [paymentsCount, oldestPayment, gatewayStats] = await Promise.all([
+          prisma.payment.count({
+            where: {
+              shopId: merchant.id,
+              status: 'PAID',
+              amountUSDT: { not: null },
+            },
+          }),
+          prisma.payment.findFirst({
+            where: {
+              shopId: merchant.id,
+              status: 'PAID',
+              amountUSDT: { not: null },
+            },
+            orderBy: { paidAt: 'asc' },
+            select: { paidAt: true },
+          }),
+          prisma.payment.groupBy({
+            by: ['gateway'],
+            where: {
+              shopId: merchant.id,
+              status: 'PAID',
+              amountUSDT: { not: null },
+            },
+            _count: { id: true },
+            _sum: { amountUSDT: true },
+          }),
+        ]);
+
+        const gatewayBreakdown = gatewayStats.map((stat) => ({
+          gateway: stat.gateway,
+          count: stat._count.id,
+          amountUSDT: stat._sum.amountUSDT || 0,
+          amountAfterCommissionUSDT: stat._sum.amountUSDT || 0, // Теперь баланс уже учитывает все
+          commission: 0, // Комиссия уже учтена в балансе
+        }));
+
+        return {
+          id: merchant.id,
+          fullName: merchant.name,
+          username: merchant.username,
+          telegramId: merchant.telegram,
+          merchantUrl: merchant.shopUrl,
+          wallets: {
+            usdtPolygonWallet: merchant.usdtPolygonWallet,
+            usdtTrcWallet: merchant.usdtTrcWallet,
+            usdtErcWallet: merchant.usdtErcWallet,
+            usdcPolygonWallet: merchant.usdcPolygonWallet,
+          },
+          totalAmountUSDT: merchant.balance, // Баланс = доступная сумма
+          totalAmountAfterCommissionUSDT: merchant.balance, // Баланс уже учитывает комиссию
+          paymentsCount,
+          oldestPaymentDate: oldestPayment?.paidAt || merchant.createdAt,
+          gatewayBreakdown,
+        };
+      })
+    );
+
+    // Подсчитываем итоговые суммы
+    const totalAmountUSDT = merchants.reduce((sum, merchant) => sum + merchant.balance, 0);
+    const totalAmountAfterCommissionUSDT = totalAmountUSDT; // Баланс уже учитывает комиссию
+
+    console.log(`📊 Merchants awaiting payout: ${total} merchants, ${Math.round(totalAmountAfterCommissionUSDT * 100) / 100} USDT total`);
+
+    return {
+      merchants: merchantsWithStats,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      summary: {
+        totalMerchants: total,
+        totalAmountUSDT: Math.round(totalAmountUSDT * 100) / 100,
+        totalAmountAfterCommissionUSDT: Math.round(totalAmountAfterCommissionUSDT * 100) / 100,
+      },
+    };
+
+    /* ✅ СТАРЫЙ КОД УДАЛЕН - теперь используем поля balance и totalPaidOut
     const paymentsAwaitingPayout = await prisma.payment.findMany({
       where: {
         status: 'PAID',
@@ -716,56 +790,90 @@ export class AdminService {
         totalAmountAfterCommissionUSDT: Math.round(totalAmountAfterCommissionUSDT * 100) / 100,
       },
     };
+    */
   }
 
   async createPayout(payoutData: CreatePayoutRequest): Promise<PayoutResponse> {
     const { shopId, amount, network, notes, periodFrom, periodTo } = payoutData;
 
-    // Проверяем существование магазина
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-      },
+    // ✅ НОВОЕ: Используем транзакцию для атомарного обновления баланса и создания выплаты
+    const result = await prisma.$transaction(async (tx) => {
+      // Проверяем существование магазина и получаем текущий баланс
+      const shop = await tx.shop.findUnique({
+        where: { id: shopId },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          balance: true,
+          totalPaidOut: true,
+        },
+      });
+
+      if (!shop) {
+        throw new Error('Shop not found');
+      }
+
+      console.log(`💰 Creating payout for shop ${shop.username}:`);
+      console.log(`   Current balance: ${shop.balance.toFixed(6)} USDT`);
+      console.log(`   Payout amount: ${amount.toFixed(6)} USDT`);
+      console.log(`   Current total paid out: ${shop.totalPaidOut.toFixed(6)} USDT`);
+
+      // Проверяем, достаточно ли средств на балансе
+      if (shop.balance < amount) {
+        throw new Error(`Insufficient balance. Available: ${shop.balance.toFixed(6)} USDT, Requested: ${amount.toFixed(6)} USDT`);
+      }
+
+      // Создаем выплату
+      const payout = await tx.payout.create({
+        data: {
+          shopId,
+          amount,
+          network,
+          status: 'COMPLETED', // Всегда COMPLETED для админских выплат
+          notes,
+          periodFrom: periodFrom ? new Date(periodFrom) : null,
+          periodTo: periodTo ? new Date(periodTo) : null,
+          createdAt: new Date(),
+          paidAt: new Date(), // Устанавливаем время создания как время выплаты
+        },
+      });
+
+      // ✅ НОВОЕ: Обновляем баланс и общую сумму выплат
+      const newBalance = shop.balance - amount;
+      const newTotalPaidOut = shop.totalPaidOut + amount;
+
+      await tx.shop.update({
+        where: { id: shopId },
+        data: {
+          balance: newBalance,
+          totalPaidOut: newTotalPaidOut,
+        },
+      });
+
+      console.log(`💰 Shop ${shop.username} balance updated:`);
+      console.log(`   Balance: ${shop.balance.toFixed(6)} -> ${newBalance.toFixed(6)} USDT (-${amount.toFixed(6)})`);
+      console.log(`   Total paid out: ${shop.totalPaidOut.toFixed(6)} -> ${newTotalPaidOut.toFixed(6)} USDT (+${amount.toFixed(6)})`);
+
+      return { payout, shop };
     });
 
-    if (!shop) {
-      throw new Error('Shop not found');
-    }
-
-    // Создаем выплату
-    const payout = await prisma.payout.create({
-      data: {
-        shopId,
-        amount,
-        network,
-        status: 'COMPLETED', // Всегда COMPLETED для админских выплат
-        notes,
-        periodFrom: periodFrom ? new Date(periodFrom) : null,
-        periodTo: periodTo ? new Date(periodTo) : null,
-        createdAt: new Date(),
-        paidAt: new Date(), // Устанавливаем время создания как время выплаты
-      },
-    });
-
-    console.log(`✅ Payout created: ${payout.id} for shop ${shop.username} (${amount} USDT)`);
+    console.log(`✅ Payout created: ${result.payout.id} for shop ${result.shop.username} (${amount} USDT)`);
 
     return {
-      id: payout.id,
-      shopId: payout.shopId,
-      shopName: shop.name,
-      shopUsername: shop.username,
-      amount: payout.amount,
-      network: payout.network,
-      status: payout.status,
-      txid: payout.txid,
-      notes: payout.notes,
-      periodFrom: payout.periodFrom,
-      periodTo: payout.periodTo,
-      createdAt: payout.createdAt,
-      paidAt: payout.paidAt,
+      id: result.payout.id,
+      shopId: result.payout.shopId,
+      shopName: result.shop.name,
+      shopUsername: result.shop.username,
+      amount: result.payout.amount,
+      network: result.payout.network,
+      status: result.payout.status,
+      txid: result.payout.txid,
+      notes: result.payout.notes,
+      periodFrom: result.payout.periodFrom,
+      periodTo: result.payout.periodTo,
+      createdAt: result.payout.createdAt,
+      paidAt: result.payout.paidAt,
     };
   }
 
@@ -1028,36 +1136,127 @@ export class AdminService {
   }
 
   async updatePaymentStatus(id: string, status: string, notes?: string, chargebackAmount?: number): Promise<any> {
-    const updateData: any = {
-      status: status.toUpperCase(),
-      updatedAt: new Date(),
-      statusChangedBy: 'admin',
-      statusChangedAt: new Date(),
-    };
-
-    if (notes) {
-      updateData.adminNotes = notes;
-    }
-
-    if (status.toUpperCase() === 'CHARGEBACK' && chargebackAmount) {
-      updateData.chargebackAmount = chargebackAmount;
-    }
-
-    if (status.toUpperCase() === 'PAID') {
-      updateData.paidAt = new Date();
-    }
-
-    const updatedPayment = await prisma.payment.update({
-      where: { id },
-      data: updateData,
-      include: {
-        shop: {
-          select: {
-            name: true,
-            username: true,
+    // ✅ НОВОЕ: Используем транзакцию для атомарного обновления платежа и баланса
+    const updatedPayment = await prisma.$transaction(async (tx) => {
+      // Получаем текущее состояние платежа и магазина
+      const currentPayment = await tx.payment.findUnique({
+        where: { id },
+        include: {
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              balance: true,
+            },
           },
         },
-      },
+      });
+
+      if (!currentPayment) {
+        throw new Error('Payment not found');
+      }
+
+      const oldStatus = currentPayment.status;
+      const newStatus = status.toUpperCase();
+      
+      console.log(`🔄 Admin updating payment ${id} status: ${oldStatus} -> ${newStatus}`);
+      console.log(`💰 Current shop balance: ${currentPayment.shop.balance} USDT`);
+
+      const updateData: any = {
+        status: newStatus,
+        updatedAt: new Date(),
+        statusChangedBy: 'admin',
+        statusChangedAt: new Date(),
+      };
+
+      if (notes) {
+        updateData.adminNotes = notes;
+      }
+
+      if (newStatus === 'CHARGEBACK' && chargebackAmount) {
+        updateData.chargebackAmount = chargebackAmount;
+      }
+
+      // ✅ НОВОЕ: Логика обновления баланса мерчанта
+      let balanceChange = 0;
+      let newShopBalance = currentPayment.shop.balance;
+
+      // Переход в статус PAID
+      if (newStatus === 'PAID' && oldStatus !== 'PAID') {
+        updateData.paidAt = new Date();
+        
+        // Конвертируем сумму в USDT
+        const amountUSDT = await currencyService.convertToUSDT(currentPayment.amount, currentPayment.currency);
+        updateData.amountUSDT = amountUSDT;
+        
+        // Добавляем к балансу
+        balanceChange = amountUSDT;
+        newShopBalance += amountUSDT;
+        
+        console.log(`💰 Payment ${id} became PAID: +${amountUSDT.toFixed(6)} USDT to balance`);
+      }
+      
+      // Переход из статуса PAID
+      else if (oldStatus === 'PAID' && newStatus !== 'PAID') {
+        if (currentPayment.amountUSDT) {
+          // Вычитаем ранее добавленную сумму
+          balanceChange = -currentPayment.amountUSDT;
+          newShopBalance -= currentPayment.amountUSDT;
+          updateData.amountUSDT = null;
+          
+          console.log(`💰 Payment ${id} no longer PAID: -${currentPayment.amountUSDT.toFixed(6)} USDT from balance`);
+        }
+      }
+      
+      // Специальная обработка CHARGEBACK
+      if (newStatus === 'CHARGEBACK') {
+        if (oldStatus === 'PAID' && currentPayment.amountUSDT) {
+          // Уже обработано выше - вычли amountUSDT
+        }
+        
+        // Дополнительно вычитаем штраф
+        if (chargebackAmount && chargebackAmount > 0) {
+          balanceChange -= chargebackAmount;
+          newShopBalance -= chargebackAmount;
+          
+          console.log(`💸 CHARGEBACK penalty: -${chargebackAmount.toFixed(6)} USDT from balance`);
+        }
+      }
+      
+      // Специальная обработка REFUND
+      if (newStatus === 'REFUND' && oldStatus === 'PAID') {
+        // Логика уже обработана выше в "Переход из статуса PAID"
+        console.log(`🔄 REFUND: Payment amount already deducted from balance`);
+      }
+
+      // Обновляем платеж
+      const updatedPayment = await tx.payment.update({
+        where: { id },
+        data: updateData,
+        include: {
+          shop: {
+            select: {
+              name: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      // ✅ НОВОЕ: Обновляем баланс мерчанта, если он изменился
+      if (balanceChange !== 0) {
+        await tx.shop.update({
+          where: { id: currentPayment.shopId },
+          data: {
+            balance: newShopBalance,
+          },
+        });
+        
+        console.log(`💰 Shop ${currentPayment.shopId} balance updated: ${currentPayment.shop.balance.toFixed(6)} -> ${newShopBalance.toFixed(6)} USDT (${balanceChange > 0 ? '+' : ''}${balanceChange.toFixed(6)})`);
+      }
+
+      return updatedPayment;
     });
 
     return {

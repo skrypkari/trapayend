@@ -66,6 +66,9 @@ model Shop {
   usdtTrcWallet     String?  @map("usdt_trc_wallet")
   usdtErcWallet     String?  @map("usdt_erc_wallet")
   usdcPolygonWallet String?  @map("usdc_polygon_wallet")
+  // ✅ НОВОЕ: Поля для баланса и выплат
+  balance         Float      @default(0.0) @map("balance") // Текущий баланс в USDT
+  totalPaidOut    Float      @default(0.0) @map("total_paid_out") // Общая сумма выплат в USDT
   status          ShopStatus @default(ACTIVE)
   createdAt       DateTime   @default(now()) @map("created_at")
 
@@ -157,6 +160,8 @@ model Payment {
   amount              Float
   currency            String        @default("USD")
   sourceCurrency      String?       @map("source_currency") // New field
+  // ✅ НОВОЕ: Сумма платежа в USDT (конвертируется при статусе PAID)
+  amountUSDT          Float?        @map("amount_usdt") // Сумма в USDT на момент оплаты
   usage               PaymentUsage  @default(ONCE)
   expiresAt           DateTime?     @map("expires_at")
   // ✅ НОВОЕ: Три типа URL для payments
@@ -196,7 +201,6 @@ model Payment {
   remitterName        String?       @map("remitter_name") // Remitter name (Noda)
   // New fields for payout tracking
   paidAt              DateTime?     @map("paid_at") // When payment was actually paid
-  merchantPaid        Boolean       @default(false) @map("merchant_paid") // Whether merchant has been paid out
   // ✅ ДОБАВЛЕНО: Поля для chargeback и refund
   chargebackAmount    Float?        @map("chargeback_amount") // Сумма штрафа при chargeback
   adminNotes          String?       @map("admin_notes") @db.Text // Заметки админа при изменении статуса

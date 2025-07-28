@@ -1,6 +1,7 @@
 export interface GatewaySettings {
   commission: number; // Percentage (0-100)
-  minAmount?: number; // ✅ НОВОЕ: Минимальная сумма платежа
+  minAmount?: number; // Минимальная сумма платежа
+  maxAmount?: number; // ✅ НОВОЕ: Максимальная сумма платежа
 }
 
 export interface WalletSettings {
