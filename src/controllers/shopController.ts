@@ -139,13 +139,15 @@ export class ShopController {
         });
       }
 
-      const { page = 1, limit = 20, status, gateway } = req.query;
+      const { page = 1, limit = 20, status, gateway, currency, search } = req.query;
       
       const result = await this.shopService.getPayments(shopId, {
         page: Number(page),
         limit: Number(limit),
         status: status as string,
         gateway: gateway as string,
+        currency: currency as string, // ✅ ДОБАВЛЕНО: Передаем параметр currency
+        search: search as string, // ✅ ДОБАВЛЕНО: Передаем параметр search
       });
       
       res.json({
@@ -246,13 +248,16 @@ export class ShopController {
         });
       }
 
-      const { page = 1, limit = 20, status, method, dateFrom, dateTo, periodFrom, periodTo } = req.query;
+      const { page = 1, limit = 20, status, method, network, dateFrom, dateTo, periodFrom, periodTo } = req.query;
+      
+      console.log('🔍 Payouts filter params:', { page, limit, status, method, network, dateFrom, dateTo, periodFrom, periodTo });
       
       const result = await this.shopService.getPayouts(shopId, {
         page: Number(page),
         limit: Number(limit),
         status: status as string,
         method: method as string,
+        network: network as string, // ✅ ИСПРАВЛЕНО: Добавлен параметр network
         dateFrom: dateFrom as string,
         dateTo: dateTo as string,
         periodFrom: periodFrom as string, // ✅ НОВОЕ: Передаем periodFrom

@@ -537,7 +537,7 @@ export class TelegramBotService {
       `📅 Date: ${new Date(payment.createdAt).toLocaleString('en-US')}\n`;
 
     // ✅ ДОБАВЛЕНО: Информация о плательщике
-    if (payment.customerName || payment.customerEmail) {
+    if (payment.customerName || payment.customerEmail || payment.remitterIban || payment.customerIp || payment.customerUa) {
       message += `\n👤 *Customer Information:*\n`;
       
       if (payment.customerName) {
@@ -546,6 +546,24 @@ export class TelegramBotService {
       
       if (payment.customerEmail) {
         message += `📧 Email: \`${payment.customerEmail}\`\n`;
+      }
+      
+      // ✅ ДОБАВЛЕНО: Отображение IBAN для CoinToPay платежей
+      if (payment.remitterIban) {
+        message += `🏦 IBAN: \`${payment.remitterIban}\`\n`;
+      }
+      
+      // ✅ ДОБАВЛЕНО: Отображение IP адреса
+      if (payment.customerIp) {
+        message += `🌐 IP: \`${payment.customerIp}\`\n`;
+      }
+      
+      // ✅ ДОБАВЛЕНО: Отображение User Agent (сокращенный)
+      if (payment.customerUa) {
+        const shortUserAgent = payment.customerUa.length > 50 
+          ? payment.customerUa.substring(0, 50) + '...' 
+          : payment.customerUa;
+        message += `💻 Browser: \`${shortUserAgent}\`\n`;
       }
     }
 

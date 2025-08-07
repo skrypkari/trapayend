@@ -65,3 +65,38 @@ export const requireShop = (req: Request, res: Response, next: NextFunction) => 
   }
   next();
 };
+
+export const requireActiveShop = async (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user || req.user.role !== 'shop') {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'Shop access required' 
+    });
+  }
+
+  try {
+    // Use existing prisma instance instead of creating new one
+    const prisma = require('../config/database').default;
+    
+    const shop = await prisma.shop.findUnique({
+      where: { id: req.user.id },
+      select: { status: true }
+    });
+
+    if (!shop || shop.status !== 'ACTIVE') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Account is suspended or inactive. Contact administrator to activate your account.',
+        suspended: shop?.status === 'SUSPENDED'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error checking account status:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error checking account status' 
+    });
+  }
+};

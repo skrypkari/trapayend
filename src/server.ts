@@ -32,7 +32,7 @@ async function startServer() {
     domainMonitoringService.startMonitoring();
 
     // Start server
-    app.listen(config.port, '127.1.5.139', () => {
+    app.listen(config.port, '127.1.1.159', () => {
       console.log(`🚀 Server running on port ${config.port}`);
       console.log(`🌍 Environment: ${config.nodeEnv}`);
       console.log(`📊 Health check: http://localhost:${config.port}/api/health`);

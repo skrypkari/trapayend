@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { TestGatewayController } from '../controllers/testGatewayController';
-import { validate, processCardSchema } from '../middleware/validation';
+import { validate, cardPaymentSchema } from '../middleware/validation';
 
 const router = Router();
 const testGatewayController = new TestGatewayController();
@@ -19,7 +19,7 @@ router.options('*', (req, res) => {
 });
 
 // Test gateway card processing endpoint
-router.post('/process-card/:paymentId', validate(processCardSchema), testGatewayController.processCard);
+router.post('/process-card/:paymentId', validate(cardPaymentSchema), testGatewayController.processCard);
 
 // Test gateway payment form endpoint (returns payment details for form)
 router.get('/payment/:paymentId', testGatewayController.getPaymentForm);

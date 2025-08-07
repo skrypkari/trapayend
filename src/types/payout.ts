@@ -18,6 +18,7 @@ export interface PayoutFilters {
   limit: number;
   status?: string;
   method?: string;
+  network?: string;   // ✅ ДОБАВЛЕНО: Фильтр по сети (network)
   dateFrom?: string;
   dateTo?: string;
   periodFrom?: string; // ✅ НОВОЕ: Фильтр по периоду начала
@@ -57,9 +58,12 @@ export interface ShopPayoutResponse {
   id: string;
   amount: number;
   network: string;
+  wallet?: string | null;   // ✅ ДОБАВЛЕНО: Адрес кошелька на момент выплаты
   status: string;
   txid?: string | null;
   notes?: string | null;
+  periodFrom?: Date | null; // ✅ ДОБАВЛЕНО: Период начала
+  periodTo?: Date | null;   // ✅ ДОБАВЛЕНО: Период окончания
   createdAt: Date;
   paidAt: Date;
 }

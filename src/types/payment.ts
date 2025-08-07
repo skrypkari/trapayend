@@ -13,6 +13,13 @@ export interface CreatePaymentRequest {
   customerCountry?: string; // ✅ НОВОЕ: Страна клиента
   customerIp?: string;      // ✅ НОВОЕ: IP адрес клиента
   customerUa?: string;      // ✅ НОВОЕ: User Agent клиента
+  // ✅ НОВОЕ: Поля для MasterCard
+  cardData?: {
+    number: string;
+    expire_month: string;
+    expire_year: string;
+    cvv: string;
+  };
   // New Rapyd fields
   country?: string;
   language?: string;
@@ -40,6 +47,13 @@ export interface CreatePublicPaymentRequest {
   customer_country?: string; // ✅ НОВОЕ: Страна клиента
   customer_ip?: string;      // ✅ НОВОЕ: IP адрес клиента
   customer_ua?: string;      // ✅ НОВОЕ: User Agent клиента
+  // ✅ НОВОЕ: Поля для MasterCard
+  card_data?: {
+    number: string;
+    expire_month: string;
+    expire_year: string;
+    cvv: string;
+  };
   // New Rapyd fields
   country?: string;
   language?: string;
@@ -177,4 +191,6 @@ export interface PaymentFilters {
   limit: number;
   status?: string;
   gateway?: string;
+  currency?: string; // ✅ ДОБАВЛЕНО: Фильтр по валюте
+  search?: string; // ✅ ДОБАВЛЕНО: Поиск по различным полям
 }

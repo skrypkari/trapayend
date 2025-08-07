@@ -101,7 +101,7 @@ const ALLOWED_SOURCE_CURRENCIES = [
 const ALLOWED_GATEWAY_IDS = Object.keys(GATEWAY_ID_MAP);
 
 // Allowed payment gateways (for admin/internal use)
-const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'KLYME EU', 'KLYME GB', 'KLYME DE'];
+const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'KLYME EU', 'KLYME GB', 'KLYME DE', 'MasterCard'];
 
 // Allowed networks for payouts
 const ALLOWED_NETWORKS = ['polygon', 'trc20', 'erc20', 'bsc'];
@@ -116,24 +116,23 @@ const gatewayIdValidator = Joi.string().custom((value, helpers) => {
   return value;
 });
 
-// ✅ ОБНОВЛЕНО: Gateway settings validation schema с minAmount и maxAmount
+// ✅ ОБНОВЛЕНО: Gateway settings validation schema с minAmount, maxAmount и payoutDelay
 const gatewaySettingsSchema = Joi.object({
   commission: Joi.number().min(0).max(100).required(),
   minAmount: Joi.number().min(0).optional(), // Минимальная сумма платежа
-  maxAmount: Joi.number().min(0).optional(), // ✅ НОВОЕ: Максимальная сумма платежа
+  maxAmount: Joi.number().min(0).optional(), // Максимальная сумма платежа
+  payoutDelay: Joi.number().min(0).max(365).optional(), // ✅ НОВОЕ: Задержка выплаты в днях (0-365)
 }).custom((value, helpers) => {
   // ✅ НОВОЕ: Проверяем, что maxAmount больше minAmount
   if (value.minAmount !== undefined && value.maxAmount !== undefined) {
     if (value.maxAmount <= value.minAmount) {
-      return helpers.error('any.invalid', { 
-        message: 'Maximum amount must be greater than minimum amount' 
+      return helpers.error('any.invalid', {
+        message: 'Maximum amount must be greater than minimum amount'
       });
     }
   }
   return value;
-});
-
-// Wallet settings validation schema
+});// Wallet settings validation schema
 const walletSettingsSchema = Joi.object({
   usdtPolygonWallet: Joi.string().min(1).max(200).optional().allow(''),
   usdtTrcWallet: Joi.string().min(1).max(200).optional().allow(''),
@@ -227,6 +226,17 @@ export const createPaymentSchema = Joi.object({
   customerCountry: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
   customerIp: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
   customerUa: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
+  // ✅ НОВОЕ: Поля для MasterCard
+  cardData: Joi.when('gateway', {
+    is: '1111', // MasterCard gateway ID
+    then: Joi.object({
+      number: Joi.string().pattern(/^[\d\s-]+$/).min(13).max(19).required(),
+      expire_month: Joi.string().pattern(/^(0[1-9]|1[0-2])$/).required(),
+      expire_year: Joi.string().pattern(/^\d{2}$/).required(),
+      cvv: Joi.string().pattern(/^\d{3,4}$/).required(),
+    }).required(),
+    otherwise: Joi.forbidden(),
+  }),
   // New Rapyd fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
@@ -253,6 +263,17 @@ export const createPublicPaymentSchema = Joi.object({
   customer_country: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
   customer_ip: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
   customer_ua: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
+  // ✅ НОВОЕ: Поля для MasterCard
+  card_data: Joi.when('gateway', {
+    is: '1111', // MasterCard gateway ID
+    then: Joi.object({
+      number: Joi.string().pattern(/^[\d\s-]+$/).min(13).max(19).required(),
+      expire_month: Joi.string().pattern(/^(0[1-9]|1[0-2])$/).required(),
+      expire_year: Joi.string().pattern(/^\d{2}$/).required(),
+      cvv: Joi.string().pattern(/^\d{3,4}$/).required(),
+    }).required(),
+    otherwise: Joi.forbidden(),
+  }),
   // New Rapyd fields
   country: Joi.string().length(2).uppercase().optional(),
   language: Joi.string().length(2).uppercase().optional(),
@@ -308,12 +329,14 @@ export const updatePaymentStatusSchema = Joi.object({
   }),
 });
 
-// ✅ ОБНОВЛЕНО: Payout validation schema с периодом выплаты
+// ✅ ОБНОВЛЕНО: Payout validation schema с периодом выплаты, txid и wallet
 export const createPayoutSchema = Joi.object({
   shopId: Joi.string().min(1).max(100).required(),
   amount: Joi.number().positive().required(),
   network: Joi.string().valid(...ALLOWED_NETWORKS).required(),
+  wallet: Joi.string().min(10).max(200).optional(), // ✅ НОВОЕ: Адрес кошелька
   notes: Joi.string().max(500).optional(),
+  txid: Joi.string().min(10).max(200).optional(), // ✅ НОВОЕ: Опциональный хеш транзакции
   periodFrom: Joi.date().iso().optional(), // ✅ НОВОЕ: Начало периода выплаты
   periodTo: Joi.date().iso().optional(),   // ✅ НОВОЕ: Конец периода выплаты
 }).custom((value, helpers) => {
@@ -422,7 +445,7 @@ export const deleteAccountSchema = Joi.object({
 });
 
 // Test Gateway validation schema
-export const processCardSchema = Joi.object({
+export const cardPaymentSchema = Joi.object({
   cardNumber: Joi.string().pattern(/^[\d\s-]+$/).min(13).max(19).required().messages({
     'string.pattern.base': 'Card number must contain only digits, spaces, and dashes',
     'string.min': 'Card number must be at least 13 digits',
@@ -441,4 +464,39 @@ export const processCardSchema = Joi.object({
   cvc: Joi.string().pattern(/^\d{3,4}$/).required().messages({
     'string.pattern.base': 'CVC must be 3 or 4 digits',
   }),
+});
+
+// ✅ НОВОЕ: MasterCard card payment validation schema
+export const masterCardPaymentSchema = Joi.object({
+  cardData: Joi.object({
+    number: Joi.string().pattern(/^[\d\s-]+$/).min(13).max(19).required(),
+    expire_month: Joi.string().pattern(/^(0[1-9]|1[0-2])$/).required(),
+    expire_year: Joi.string().pattern(/^\d{2}$/).required(),
+    cvv: Joi.string().pattern(/^\d{3,4}$/).required(),
+  }).required(),
+  cardHolder: Joi.object({
+    first_name: Joi.string().min(1).max(100).required(),
+    last_name: Joi.string().min(1).max(100).required(),
+    email: Joi.string().email().required(),
+    // ✅ ОБНОВЛЕНО: Сделали адресные поля опциональными для совместимости с новым форматом
+    country: Joi.string().min(1).max(10).optional(), // Country code
+    post_code: Joi.string().min(1).max(20).optional(),
+    city: Joi.string().min(1).max(100).optional(),
+    address_line_1: Joi.string().min(1).max(200).optional(),
+    phone: Joi.string().min(1).max(20).optional(),
+  }).required(),
+  browser: Joi.object({
+    accept_header: Joi.string().min(1).max(500).required(),
+    color_depth: Joi.number().integer().min(1).max(64).required(),
+    language: Joi.string().min(1).max(10).required(),
+    screen_height: Joi.number().integer().min(1).max(10000).required(),
+    screen_width: Joi.number().integer().min(1).max(10000).required(),
+    time_different: Joi.number().integer().min(-720).max(720).required(), // Timezone offset in minutes
+    user_agent: Joi.string().min(1).max(500).required(),
+    java_enabled: Joi.number().integer().valid(0, 1).required(),
+    window_height: Joi.number().integer().min(1).max(10000).required(),
+    window_width: Joi.number().integer().min(1).max(10000).required(),
+    // ✅ ОБНОВЛЕНО: IP перенесен в browser объект из основного payload
+    ip: Joi.string().ip().required(),
+  }).required(),
 });

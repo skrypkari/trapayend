@@ -6,6 +6,7 @@ import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
 import { TestGatewayService } from './gateways/testGatewayService';
+import { MasterCardService } from './gateways/mastercardService';
 import { telegramBotService } from './telegramBotService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
@@ -18,6 +19,7 @@ export class PaymentService {
   private coinToPayService: CoinToPayService;
   private klymeService: KlymeService;
   private testGatewayService: TestGatewayService;
+  private masterCardService: MasterCardService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -26,6 +28,7 @@ export class PaymentService {
     this.coinToPayService = new CoinToPayService();
     this.klymeService = new KlymeService();
     this.testGatewayService = new TestGatewayService();
+    this.masterCardService = new MasterCardService();
   }
 
   private async generateGatewayOrderId(): Promise<string> {
@@ -60,7 +63,7 @@ export class PaymentService {
     return gatewayOrderId;
   }
 
-  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде apptest.trapay.uk
+  // ✅ ОБНОВЛЕНО: Унифицированная генерация URL - везде app.trapay.uk
   private generateGatewayUrls(
     gatewayName: string, 
     paymentId: string, 
@@ -91,10 +94,10 @@ export class PaymentService {
       };
     }
 
-    // ✅ ОБНОВЛЕНО: Везде используем apptest.trapay.uk с payment_id параметром
-    const dbSuccessUrl = successUrl || `https://apptest.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
-    const dbFailUrl = failUrl || `https://apptest.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
-    const dbPendingUrl = pendingUrl || `https://apptest.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    // ✅ ОБНОВЛЕНО: Везде используем app.trapay.uk с payment_id параметром
+    const dbSuccessUrl = successUrl || `https://app.trapay.uk/payment/success?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbFailUrl = failUrl || `https://app.trapay.uk/payment/fail?id=${paymentId}&payment_id=${gatewayOrderId}`;
+    const dbPendingUrl = pendingUrl || `https://app.trapay.uk/payment/pending?id=${paymentId}&payment_id=${gatewayOrderId}`;
 
     // ✅ ОБНОВЛЕНО: Для шлюзов используем tesoft.uk только для внутренних redirect
     let finalSuccessUrl: string;
@@ -305,6 +308,7 @@ export class PaymentService {
       'klyme_eu': 'KLYME EU',
       'klyme_gb': 'KLYME GB',
       'klyme_de': 'KLYME DE',
+      'mastercard': 'MasterCard',
     };
 
     return gatewayDisplayNames[gatewayName] || gatewayName;
@@ -491,8 +495,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Plisio payment URL: ${paymentUrl}`);
 
         return {
@@ -534,8 +538,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Rapyd payment URL: ${paymentUrl}`);
 
         return {
@@ -572,8 +576,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Noda payment URL: ${paymentUrl}`);
 
         return {
@@ -610,8 +614,8 @@ export class PaymentService {
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 CoinToPay payment URL: ${paymentUrl}`);
 
         return {
@@ -651,8 +655,8 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`✅ KLYME ${region} payment created successfully with gateway order_id: ${gatewayOrderId}`);
         console.log(`🔗 KLYME ${region} payment URL: ${paymentUrl}`);
 
@@ -668,7 +672,7 @@ export class PaymentService {
         console.log(`💰 Amount: ${amount} ${currency || 'USD'} (Test Gateway)`);
 
         // For test gateway, we create a payment form URL instead of external payment URL
-        const testGatewayFormUrl = `https://apptest.trapay.uk/test-gateway/payment/${payment.id}`;
+        const testGatewayFormUrl = `https://app.trapay.uk/test-gateway/payment/${payment.id}`;
         
         await prisma.payment.update({
           where: { id: payment.id },
@@ -678,14 +682,48 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
         console.log(`🔗 Test Gateway payment URL: ${paymentUrl}`);
         console.log(`🧪 Test Gateway form URL: ${testGatewayFormUrl}`);
 
         return {
           id: payment.id,
           gateway_payment_id: `test_${gatewayOrderId}`,
+          payment_url: paymentUrl,
+          status: payment.status,
+        };
+
+      } else if (gatewayName === 'mastercard') {
+        console.log(`💳 Creating MasterCard payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${amount} ${currency || 'USD'} (MasterCard)`);
+
+        // ✅ ОБНОВЛЕНО: Для MasterCard создаем платеж в PENDING статусе
+        // Данные карты будут обработаны позже через отдельный эндпоинт
+        const masterCardFormUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        
+        gatewayPaymentId = `mc_${gatewayOrderId}`;
+        externalPaymentUrl = masterCardFormUrl;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            paymentMethod: 'mastercard',
+          },
+        });
+
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+
+        console.log(`🔗 MasterCard payment URL: ${paymentUrl}`);
+        console.log(`💳 MasterCard form URL: ${masterCardFormUrl}`);
+        console.log(`📝 Note: Card data will be processed via separate endpoint`);
+
+        return {
+          id: payment.id,
+          gateway_payment_id: gatewayPaymentId,
           payment_url: paymentUrl,
           status: payment.status,
         };
@@ -751,8 +789,8 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
@@ -884,8 +922,8 @@ export class PaymentService {
       console.log(`   - Failure Message: ${payment.failureMessage}`);
     }
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {
@@ -937,6 +975,103 @@ export class PaymentService {
     };
   }
 
+  // ✅ НОВОЕ: Обновление данных клиента платежа
+  async updatePaymentCustomerData(shopId: string, paymentId: string, customerData: any): Promise<any | null> {
+    console.log(`� Updating customer data for payment: ${paymentId}, shop: ${shopId}`);
+    console.log(`📝 Customer data:`, customerData);
+
+    // Сначала проверяем, что платеж принадлежит этому магазину
+    const payment = await prisma.payment.findFirst({
+      where: {
+        OR: [
+          { id: paymentId },
+          { orderId: paymentId },
+          { gatewayOrderId: paymentId },
+          { gatewayPaymentId: paymentId },
+        ],
+        shopId: shopId, // ✅ Проверяем принадлежность к магазину
+      },
+      select: {
+        id: true,
+        shopId: true,
+      },
+    });
+
+    if (!payment) {
+      console.log(`❌ Payment not found or not owned by shop: ${paymentId}`);
+      return null;
+    }
+
+    // Обновляем данные клиента
+    const updatedPayment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        customerIp: customerData.customerIp,
+        customerUa: customerData.customerUa,
+        customerCountry: customerData.customerCountry,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        customerIp: true,
+        customerUa: true,
+        customerCountry: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log(`✅ Updated customer data for payment: ${payment.id}`);
+    return updatedPayment;
+  }
+
+  // ✅ НОВОЕ: Публичное обновление данных клиента платежа (без проверки shopId)
+  async updatePaymentCustomerDataPublic(paymentId: string, customerData: any): Promise<any | null> {
+    console.log(`🔄 Updating customer data for payment (public): ${paymentId}`);
+    console.log(`📝 Customer data:`, customerData);
+
+    // Находим платеж по любому из идентификаторов
+    const payment = await prisma.payment.findFirst({
+      where: {
+        OR: [
+          { id: paymentId },
+          { orderId: paymentId },
+          { gatewayOrderId: paymentId },
+          { gatewayPaymentId: paymentId },
+        ],
+      },
+      select: {
+        id: true,
+        shopId: true,
+      },
+    });
+
+    if (!payment) {
+      console.log(`❌ Payment not found: ${paymentId}`);
+      return null;
+    }
+
+    // Обновляем данные клиента
+    const updatedPayment = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        customerIp: customerData.customerIp,
+        customerUa: customerData.customerUa,
+        customerCountry: customerData.customerCountry,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        customerIp: true,
+        customerUa: true,
+        customerCountry: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log(`✅ Updated customer data for payment (public): ${payment.id}`);
+    return updatedPayment;
+  }
+
   async getPaymentsByShop(shopId: string, filters: PaymentFilters): Promise<{
     payments: any[];
     pagination: {
@@ -946,7 +1081,7 @@ export class PaymentService {
       totalPages: number;
     };
   }> {
-    const { page, limit, status, gateway } = filters;
+    const { page, limit, status, gateway, currency, search } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = { shopId };
@@ -964,6 +1099,24 @@ export class PaymentService {
       } else {
         where.gateway = gateway.toLowerCase();
       }
+    }
+
+    // ✅ ДОБАВЛЕНО: Фильтр по валюте
+    if (currency) {
+      where.currency = currency.toUpperCase();
+      console.log(`💱 Currency filter applied in shop payments: ${currency.toUpperCase()}`);
+    }
+
+    // ✅ ДОБАВЛЕНО: Поиск по различным полям
+    if (search) {
+      where.OR = [
+        { id: { contains: search, mode: 'insensitive' } }, // ✅ Поиск по ID платежа
+        { orderId: { contains: search, mode: 'insensitive' } },
+        { gatewayOrderId: { contains: search, mode: 'insensitive' } },
+        { customerEmail: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
+      ];
+      console.log(`🔍 Search applied in shop payments: ${search}`);
     }
 
     const [payments, total] = await Promise.all([
@@ -1005,6 +1158,9 @@ export class PaymentService {
           remitterIban: true,
           remitterName: true,
           failureMessage: true,
+          customerIp: true,
+          customerUa: true,
+          customerCountry: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -1014,8 +1170,8 @@ export class PaymentService {
 
     return {
       payments: payments.map(payment => {
-        // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-        const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
         let txUrls: string[] | null = null;
         if (payment.txUrls) {
@@ -1065,6 +1221,9 @@ export class PaymentService {
           remitter_iban: payment.remitterIban,
           remitter_name: payment.remitterName,
           failure_message: payment.failureMessage,
+          customer_ip: payment.customerIp,
+          customer_ua: payment.customerUa,
+          customer_country: payment.customerCountry,
           created_at: payment.createdAt,
           updated_at: payment.updatedAt,
         };
@@ -1125,8 +1284,8 @@ export class PaymentService {
 
     if (!payment) return null;
 
-    // ✅ ОБНОВЛЕНО: Везде возвращаем apptest.trapay.uk
-    const paymentUrl = `https://apptest.trapay.uk/payment/${payment.id}`;
+    // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+    const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
 
     let txUrls: string[] | null = null;
     if (payment.txUrls) {

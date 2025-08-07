@@ -25,6 +25,9 @@ router.get('/merchant-statistics', adminController.getMerchantStatistics);
 router.get('/payout/stats', adminController.getPayoutStats);
 router.get('/payout/merchants', adminController.getMerchantsAwaitingPayout);
 
+// Merchants selection for frontend dropdowns
+router.get('/merchants/selection', adminController.getMerchantsSelection);
+
 // Payout management routes
 router.post('/payout', validate(createPayoutSchema), adminController.createPayout);
 router.get('/payouts', adminController.getPayouts);

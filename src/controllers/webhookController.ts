@@ -189,4 +189,33 @@ export class WebhookController {
       });
     }
   };
+
+  // MasterCard webhook handler
+  handleMasterCardWebhook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      console.log('Received MasterCard webhook:', req.body);
+      
+      // Log incoming webhook with headers
+      loggerService.logWebhookReceived('mastercard', req.body, req.headers);
+      
+      const result = await this.webhookService.processMasterCardWebhook(req.body);
+      
+      // MasterCard expects 200 OK response
+      res.status(200).json({
+        success: true,
+        message: 'MasterCard webhook processed successfully',
+      });
+    } catch (error) {
+      console.error('MasterCard webhook processing error:', error);
+      
+      // Log webhook processing error
+      loggerService.logWebhookError('mastercard', error, req.body);
+      
+      // Still return 200 to prevent MasterCard from retrying
+      res.status(200).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'MasterCard webhook processing failed',
+      });
+    }
+  };
 }

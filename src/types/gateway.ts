@@ -8,6 +8,7 @@ export const GATEWAY_ID_MAP: Record<string, string> = {
   '1001': 'klyme_eu',
   '1010': 'klyme_gb',
   '1100': 'klyme_de',
+  '1111': 'mastercard',
 };
 
 // Reverse mapping for name to ID
@@ -20,6 +21,7 @@ export const GATEWAY_NAME_MAP: Record<string, string> = {
   'klyme_eu': '1001',
   'klyme_gb': '1010',
   'klyme_de': '1100',
+  'mastercard': '1111',
 };
 
 export interface GatewayInfo {
@@ -85,6 +87,12 @@ export const AVAILABLE_GATEWAYS: GatewayInfo[] = [
     name: 'klyme_de',
     displayName: 'KLYME DE',
     region: 'DE',
+    isActive: true,
+  },
+  {
+    id: '1111',
+    name: 'mastercard',
+    displayName: 'MasterCard',
     isActive: true,
   },
 ];
@@ -175,6 +183,17 @@ export const GATEWAY_INFO: Record<string, GatewayInfo> = {
     description: 'Bank transfer infrastructure - ID: 1100',
     features: ['EUR', 'SEPA'],
     color: 'bg-teal-500',
+    fee: '10%',
+    payout: 'T+5',
+    isActive: true,
+  },
+  '1111': {
+    id: '1111',
+    name: 'MasterCard',
+    displayName: '1111 - Bank Card - MasterCard',
+    description: 'MasterCard payment processing - ID: 1111',
+    features: ['Cards', 'MasterCard'],
+    color: 'bg-red-500',
     fee: '10%',
     payout: 'T+5',
     isActive: true,

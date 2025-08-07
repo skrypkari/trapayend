@@ -125,6 +125,20 @@ export class AdminController {
     }
   };
 
+  // GET /api/admin/merchants/selection - Get merchants list for frontend selection
+  getMerchantsSelection = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.adminService.getMerchantsSelection();
+      
+      res.json({
+        success: true,
+        result: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // POST /api/admin/payout - Create new payout
   createPayout = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -224,7 +238,10 @@ export class AdminController {
         shopId,
         dateFrom,
         dateTo,
-        search
+        search,
+        currency,
+        sortBy,
+        sortOrder
       } = req.query;
 
       const filters = {
@@ -236,6 +253,9 @@ export class AdminController {
         dateFrom: dateFrom as string,
         dateTo: dateTo as string,
         search: search as string,
+        currency: currency as string,
+        sortBy: sortBy as string,
+        sortOrder: sortOrder as string,
       };
 
       const result = await this.adminService.getAllPayments(filters);

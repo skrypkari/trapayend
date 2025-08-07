@@ -331,6 +331,19 @@ export class ShopService {
     });
   }
 
+  // ✅ НОВОЕ: Форматирование названий сетей для читаемого отображения
+  private formatNetworkName(network: string): string {
+    const networkDisplayNames: Record<string, string> = {
+      'polygon': 'USDT Polygon',
+      'trc20': 'USDT TRC20',
+      'erc20': 'USDT ERC20',
+      'bsc': 'USDT BSC',
+      'polygon_usdc': 'USDC Polygon',
+    };
+
+    return networkDisplayNames[network] || network;
+  }
+
   async getPayouts(shopId: string, filters: PayoutFilters): Promise<{
     payouts: ShopPayoutResponse[];
     pagination: {
@@ -340,36 +353,58 @@ export class ShopService {
       totalPages: number;
     };
   }> {
-    const { page, limit, status, method, dateFrom, dateTo, periodFrom, periodTo } = filters;
+    const { page, limit, status, method, network, dateFrom, dateTo, periodFrom, periodTo } = filters;
     const skip = (page - 1) * limit;
+
+    console.log('💰 Getting payouts with filters:', filters);
 
     const where: any = { shopId };
     
     if (status) {
       where.status = status.toUpperCase();
+      console.log(`📊 Status filter: ${status.toUpperCase()}`);
     }
     
+    // ✅ ИСПРАВЛЕНО: Поддержка как method, так и network параметров
     if (method) {
       where.network = method; // Using network field for method
+      console.log(`🌐 Method filter: ${method}`);
+    } else if (network) {
+      where.network = network; // Using network field directly
+      console.log(`🌐 Network filter: ${network}`);
     }
 
-    // ✅ ОБНОВЛЕНО: Поддержка как dateFrom/dateTo, так и periodFrom/periodTo
+    // ✅ ИСПРАВЛЕНО: Правильная обработка периода с включением времени до конца дня
     if (dateFrom || dateTo || periodFrom || periodTo) {
       where.createdAt = {};
       
       // Приоритет у periodFrom/periodTo, если они указаны
       if (periodFrom) {
-        where.createdAt.gte = new Date(periodFrom);
+        const startDate = new Date(periodFrom);
+        startDate.setHours(0, 0, 0, 0); // Начало дня
+        where.createdAt.gte = startDate;
+        console.log(`📅 Period start: ${startDate.toISOString()}`);
       } else if (dateFrom) {
-        where.createdAt.gte = new Date(dateFrom);
+        const startDate = new Date(dateFrom);
+        startDate.setHours(0, 0, 0, 0); // Начало дня
+        where.createdAt.gte = startDate;
+        console.log(`📅 Date start: ${startDate.toISOString()}`);
       }
       
       if (periodTo) {
-        where.createdAt.lte = new Date(periodTo);
+        const endDate = new Date(periodTo);
+        endDate.setHours(23, 59, 59, 999); // ✅ ИСПРАВЛЕНО: Конец дня
+        where.createdAt.lte = endDate;
+        console.log(`📅 Period end: ${endDate.toISOString()}`);
       } else if (dateTo) {
-        where.createdAt.lte = new Date(dateTo);
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999); // ✅ ИСПРАВЛЕНО: Конец дня
+        where.createdAt.lte = endDate;
+        console.log(`📅 Date end: ${endDate.toISOString()}`);
       }
     }
+
+    console.log('📊 Final WHERE conditions:', JSON.stringify(where, null, 2));
 
     const [payouts, total] = await Promise.all([
       prisma.payout.findMany({
@@ -377,21 +412,53 @@ export class ShopService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          shop: {
+            select: {
+              usdtPolygonWallet: true,
+              usdtTrcWallet: true,
+              usdtErcWallet: true,
+              usdcPolygonWallet: true,
+            },
+          },
+        },
       }),
       prisma.payout.count({ where }),
     ]);
 
     return {
-      payouts: payouts.map(payout => ({
-        id: payout.id,
-        amount: payout.amount,
-        network: payout.network,
-        status: payout.status,
-        txid: payout.txid,
-        notes: payout.notes,
-        createdAt: payout.createdAt,
-        paidAt: payout.paidAt,
-      })),
+      payouts: payouts.map(payout => {
+        // Определяем кошелек на основе сети
+        let wallet: string | null = null;
+        switch (payout.network) {
+          case 'polygon':
+            wallet = payout.shop.usdtPolygonWallet;
+            break;
+          case 'trc20':
+            wallet = payout.shop.usdtTrcWallet;
+            break;
+          case 'erc20':
+            wallet = payout.shop.usdtErcWallet;
+            break;
+          case 'polygon_usdc':
+            wallet = payout.shop.usdcPolygonWallet;
+            break;
+        }
+
+        return {
+          id: payout.id,
+          amount: payout.amount,
+          network: this.formatNetworkName(payout.network), // ✅ ИСПРАВЛЕНО: Используем читаемое название сети
+          wallet: wallet, // ✅ ДОБАВЛЕНО: Кошелек на основе сети
+          status: payout.status,
+          txid: payout.txid,
+          notes: payout.notes,
+          periodFrom: payout.periodFrom, // ✅ ДОБАВЛЕНО: Период начала
+          periodTo: payout.periodTo,     // ✅ ДОБАВЛЕНО: Период окончания
+          createdAt: payout.createdAt,
+          paidAt: payout.paidAt,
+        };
+      }),
       pagination: {
         page,
         limit,

@@ -1,7 +1,8 @@
 export interface GatewaySettings {
   commission: number; // Percentage (0-100)
   minAmount?: number; // Минимальная сумма платежа
-  maxAmount?: number; // ✅ НОВОЕ: Максимальная сумма платежа
+  maxAmount?: number; // Максимальная сумма платежа
+  payoutDelay?: number; // ✅ НОВОЕ: Задержка выплаты в днях (0-365)
 }
 
 export interface WalletSettings {

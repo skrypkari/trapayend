@@ -4,6 +4,7 @@ import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { KlymeService } from './gateways/klymeService';
+import { MasterCardService } from './gateways/mastercardService';
 import { telegramBotService } from './telegramBotService';
 import { currencyService } from './currencyService';
 import { loggerService } from './loggerService';
@@ -14,6 +15,7 @@ export class WebhookService {
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
   private klymeService: KlymeService;
+  private masterCardService: MasterCardService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -21,6 +23,7 @@ export class WebhookService {
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
     this.klymeService = new KlymeService();
+    this.masterCardService = new MasterCardService();
   }
 
   // ✅ НОВОЕ: Универсальный метод для обновления статуса платежа с управлением балансом
@@ -468,6 +471,47 @@ export class WebhookService {
     } catch (error) {
       console.error('Error processing KLYME webhook:', error);
       loggerService.logWebhookError('klyme', error, webhookData);
+      throw error;
+    }
+  }
+
+  // Обработка webhook от MasterCard
+  async processMasterCardWebhook(webhookData: any): Promise<void> {
+    console.log('🔄 Processing MasterCard webhook:', webhookData);
+
+    try {
+      const result = await this.masterCardService.processWebhook(webhookData);
+      
+      if (!result.paymentId) {
+        throw new Error('No payment ID in MasterCard webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for MasterCard webhook: ${result.paymentId}`);
+        return;
+      }
+
+      console.log(`📊 MasterCard webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус
+      await this.updatePaymentStatus(payment.id, result.status);
+
+      loggerService.logWebhookProcessed(
+        'mastercard',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
+      );
+
+    } catch (error) {
+      console.error('Error processing MasterCard webhook:', error);
+      loggerService.logWebhookError('mastercard', error, webhookData);
       throw error;
     }
   }

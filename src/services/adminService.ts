@@ -2,6 +2,7 @@ import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { currencyService } from './currencyService';
+import { getGatewayNameById, getGatewayIdByName } from '../types/gateway'; // ✅ ДОБАВЛЕНО: Импорт маппинга gateway
 import { 
   PayoutStats, 
   MerchantAwaitingPayout, 
@@ -31,6 +32,20 @@ export class AdminService {
       },
     });
 
+    // ✅ НОВОЕ: Рассчитываем точную сумму ожидающих выплат с учетом комиссий
+    const merchantsAwaitingPayout = await this.getMerchantsAwaitingPayout({ 
+      page: 1, 
+      limit: 1000 // Получаем всех мерчантов для точного расчета
+    });
+
+    // ✅ НОВОЕ: Получаем общее количество PAID платежей
+    const totalPaymentsCount = await prisma.payment.count({
+      where: {
+        status: 'PAID',
+        gateway: { not: 'test_gateway' }, // Исключаем тестовый шлюз
+      },
+    });
+
     // Получаем выплаты за текущий месяц
     const currentDate = new Date();
     const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
@@ -50,22 +65,27 @@ export class AdminService {
     });
 
     const totalPaidOut = shopStats._sum.totalPaidOut || 0;
-    const awaitingPayout = shopStats._sum.balance || 0;
+    // ✅ ИСПРАВЛЕНО: Используем точную сумму с учетом комиссий
+    const awaitingPayout = merchantsAwaitingPayout.summary.totalAmountAfterCommissionUSDT;
     const thisMonth = thisMonthStats._sum.amount || 0;
 
     // ✅ ИСПРАВЛЕНО: Возвращаем правильную структуру PayoutStats
     const stats: PayoutStats = {
       totalPayout: Math.round(totalPaidOut * 100) / 100,      // Общая сумма выплат всем мерчантам
-      awaitingPayout: Math.round(awaitingPayout * 100) / 100, // Общий баланс всех мерчантов
+      awaitingPayout: Math.round(awaitingPayout * 100) / 100, // Точная сумма с учетом комиссий
       thisMonth: Math.round(thisMonth * 100) / 100,           // Выплаты за текущий месяц
       availableBalance: Math.round(awaitingPayout * 100) / 100, // Доступный баланс = awaiting payout
+      totalPayments: totalPaymentsCount,                      // ✅ НОВОЕ: Общее количество PAID платежей
     };
 
     console.log('📊 Payout statistics calculated:');
     console.log(`   💰 Total payout: ${stats.totalPayout} USDT (total paid to merchants)`);
-    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (total merchant balances)`);
+    console.log(`   ⏳ Awaiting payout: ${stats.awaitingPayout} USDT (with commission deducted)`);
     console.log(`   💵 Available balance: ${stats.availableBalance} USDT (same as awaiting)`);
     console.log(`   📅 This month: ${stats.thisMonth} USDT`);
+    console.log(`   💳 Total payments: ${stats.totalPayments} PAID payments`);  // ✅ НОВОЕ: Логирование количества платежей
+    console.log(`   🔍 Raw balance sum: ${(shopStats._sum.balance || 0).toFixed(2)} USDT (without commission)`);
+    console.log(`   📊 Commission difference: ${((shopStats._sum.balance || 0) - awaitingPayout).toFixed(2)} USDT`);
 
     return stats;
   }
@@ -147,6 +167,18 @@ export class AdminService {
       case '90d':
         startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
         break;
+      case 'all':
+        // ✅ ИСПРАВЛЕНО: Получаем дату первого платежа в системе
+        const firstPayment = await prisma.payment.findFirst({
+          where: {
+            gateway: { not: 'test_gateway' }, // Exclude test gateway
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        });
+        startDate = firstPayment ? firstPayment.createdAt : new Date('2020-01-01');
+        console.log(`📅 Period 'all': Using start date from first payment: ${startDate.toISOString()}`);
+        break;
       default:
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     }
@@ -158,6 +190,7 @@ export class AdminService {
       successfulPayments,
       totalRevenue,
       recentPayments,
+      dailyPayments, // ✅ ДОБАВЛЕНО: Получаем все платежи для дневной статистики
     ] = await Promise.all([
       prisma.shop.count(),
       prisma.shop.count({ where: { status: 'ACTIVE' } }),
@@ -200,6 +233,19 @@ export class AdminService {
           },
         },
       }),
+      prisma.payment.findMany({ // ✅ ДОБАВЛЕНО: Все платежи для дневной статистики
+        where: {
+          createdAt: { gte: startDate },
+          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+        },
+        select: {
+          amount: true,
+          currency: true,
+          status: true,
+          amountUSDT: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
     let totalRevenueUSDT = 0;
@@ -207,6 +253,9 @@ export class AdminService {
       const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
       totalRevenueUSDT += usdtAmount;
     }
+
+    // ✅ ДОБАВЛЕНО: Генерируем дневную статистику
+    const dailyStats = this.generateDailyStatistics(dailyPayments, startDate, now);
 
     const conversionRate = totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0;
 
@@ -217,6 +266,8 @@ export class AdminService {
       successfulPayments,
       totalRevenue: Math.round(totalRevenueUSDT * 100) / 100,
       conversionRate: Math.round(conversionRate * 100) / 100,
+      dailyRevenue: dailyStats.dailyRevenue, // ✅ ДОБАВЛЕНО
+      dailyPayments: dailyStats.dailyPayments, // ✅ ДОБАВЛЕНО
       recentPayments: recentPayments.map(payment => ({
         id: payment.id,
         amount: payment.amount,
@@ -292,6 +343,26 @@ export class AdminService {
 
     console.log(`💰 Found ${payments.length} paid payments for analysis`);
 
+    // Получаем общее количество платежей (включая неуспешные) для расчета конверсии
+    const totalPaymentsWhereConditions: any = {
+      gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
+      createdAt: {
+        gte: startDate,
+        lte: endDate,
+      },
+    };
+
+    // Фильтр по конкретному мерчанту для общего подсчета
+    if (filters.shopId) {
+      totalPaymentsWhereConditions.shopId = filters.shopId;
+    }
+
+    const totalPaymentsCount = await prisma.payment.count({
+      where: totalPaymentsWhereConditions,
+    });
+
+    console.log(`📊 Total payments (including failed): ${totalPaymentsCount}, successful: ${payments.length}`);
+
     // Инициализируем переменные для подсчета
     let totalTurnover = 0;
     let merchantEarnings = 0;
@@ -316,8 +387,18 @@ export class AdminService {
           }
         }
 
-        // Определяем комиссию (по умолчанию 10%)
-        const commission = gatewaySettings.commission || 10;
+        // Определяем комиссию для конкретного шлюза (по умолчанию 10%)
+        let gatewaySpecificSettings = {};
+        let commission = 10;
+        
+        // Ищем настройки шлюза без учета регистра
+        for (const [key, value] of Object.entries(gatewaySettings)) {
+          if (key.toLowerCase() === payment.gateway.toLowerCase()) {
+            gatewaySpecificSettings = value as any;
+            commission = (value as any).commission || 10;
+            break;
+          }
+        }
         const commissionAmount = amountUSDT * (commission / 100);
         const merchantAmount = amountUSDT - commissionAmount;
 
@@ -422,10 +503,10 @@ export class AdminService {
     }
 
     // Рассчитываем общие метрики
-    const totalPayments = payments.length;
-    const successfulPayments = payments.length; // Все платежи уже PAID
-    const averageCheck = totalPayments > 0 ? totalTurnover / totalPayments : 0;
-    const conversionRate = 100; // 100% так как все платежи успешные
+    const totalPayments = totalPaymentsCount;      // Общее количество платежей (включая неуспешные)
+    const successfulPayments = payments.length;    // Количество успешных платежей (PAID)
+    const averageCheck = successfulPayments > 0 ? totalTurnover / successfulPayments : 0;
+    const conversionRate = totalPayments > 0 ? Math.round((successfulPayments / totalPayments) * 10000) / 100 : 0;
 
     const daysCount = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -476,6 +557,32 @@ export class AdminService {
     return result;
   }
 
+  async getMerchantsSelection(): Promise<Array<{ id: string; username: string; name: string }>> {
+    console.log('📋 Getting merchants selection list...');
+
+    const merchants = await prisma.shop.findMany({
+      where: {
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+
+    console.log(`📋 Found ${merchants.length} active merchants for selection`);
+
+    return merchants.map(merchant => ({
+      id: merchant.id,
+      username: merchant.username,
+      name: merchant.name,
+    }));
+  }
+
   private getGatewayDisplayName(gatewayName: string): string {
     const gatewayDisplayNames: Record<string, string> = {
       'test_gateway': 'Test Gateway',
@@ -503,6 +610,8 @@ export class AdminService {
       totalMerchants: number;
       totalAmountUSDT: number;
       totalAmountAfterCommissionUSDT: number;
+      totalPayout: number;       // ✅ НОВОЕ: Общая сумма всех выплат
+      thisMonth: number;         // ✅ НОВОЕ: Выплаты за текущий месяц
     };
   }> {
     const { page, limit, minAmount, search } = filters;
@@ -546,6 +655,7 @@ export class AdminService {
           usdtTrcWallet: true,
           usdtErcWallet: true,
           usdcPolygonWallet: true,
+          gatewaySettings: true,
           createdAt: true,
         },
       }),
@@ -563,14 +673,14 @@ export class AdminService {
             where: {
               shopId: merchant.id,
               status: 'PAID',
-              amountUSDT: { not: null },
+              gateway: { not: 'test_gateway' }, // ✅ ИСПРАВЛЕНО: Убираем фильтр amountUSDT, добавляем исключение test_gateway
             },
           }),
           prisma.payment.findFirst({
             where: {
               shopId: merchant.id,
               status: 'PAID',
-              amountUSDT: { not: null },
+              gateway: { not: 'test_gateway' }, // ✅ ИСПРАВЛЕНО: Убираем фильтр amountUSDT, добавляем исключение test_gateway
             },
             orderBy: { paidAt: 'asc' },
             select: { paidAt: true },
@@ -580,20 +690,85 @@ export class AdminService {
             where: {
               shopId: merchant.id,
               status: 'PAID',
-              amountUSDT: { not: null },
+              gateway: { not: 'test_gateway' }, // ✅ ИСПРАВЛЕНО: Убираем фильтр amountUSDT, добавляем исключение test_gateway
             },
             _count: { id: true },
             _sum: { amountUSDT: true },
           }),
         ]);
 
-        const gatewayBreakdown = gatewayStats.map((stat) => ({
-          gateway: stat.gateway,
-          count: stat._count.id,
-          amountUSDT: stat._sum.amountUSDT || 0,
-          amountAfterCommissionUSDT: stat._sum.amountUSDT || 0, // Теперь баланс уже учитывает все
-          commission: 0, // Комиссия уже учтена в балансе
-        }));
+        // ✅ НОВОЕ: Получаем статистику выплат
+        const currentDate = new Date();
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const [totalPayouts, thisMonthPayouts] = await Promise.all([
+          prisma.payout.aggregate({
+            _sum: { amount: true },
+            where: {
+              shopId: merchant.id,
+              status: 'COMPLETED',
+            },
+          }),
+          prisma.payout.aggregate({
+            _sum: { amount: true },
+            where: {
+              shopId: merchant.id,
+              status: 'COMPLETED',
+              createdAt: {
+                gte: startOfMonth,
+                lte: endOfMonth,
+              },
+            },
+          }),
+        ]);
+
+        const totalPayout = totalPayouts._sum.amount || 0;
+        const thisMonth = thisMonthPayouts._sum.amount || 0;
+
+        const gatewayBreakdown = await Promise.all(
+          gatewayStats.map(async (stat) => {
+            // Получаем настройки комиссий для данного шлюза
+            let commission = 10; // По умолчанию 10%
+            
+            if (merchant.gatewaySettings) {
+              try {
+                const gatewaySettings = JSON.parse(merchant.gatewaySettings);
+                
+                // Ищем настройки шлюза без учета регистра
+                for (const [key, value] of Object.entries(gatewaySettings)) {
+                  if (key.toLowerCase() === stat.gateway.toLowerCase()) {
+                    commission = (value as any).commission || 10;
+                    console.log(`💰 [PAYOUT] Gateway ${stat.gateway} for shop ${merchant.id}: commission = ${commission}%`);
+                    break;
+                  }
+                }
+              } catch (error) {
+                console.error(`Error parsing gateway settings for shop ${merchant.id}:`, error);
+              }
+            }
+
+            const amountUSDT = stat._sum.amountUSDT || 0;
+            const amountAfterCommissionUSDT = amountUSDT * (1 - commission / 100);
+
+            return {
+              gateway: stat.gateway,
+              count: stat._count.id,
+              amountUSDT: Math.round(amountUSDT * 100) / 100,
+              amountAfterCommissionUSDT: Math.round(amountAfterCommissionUSDT * 100) / 100,
+              commission: commission,
+            };
+          })
+        );
+
+        // ✅ ИСПРАВЛЕНО: Разделяем отображение оборота и доступного баланса
+        const totalPaymentsAmount = gatewayBreakdown.reduce((sum, gateway) => sum + gateway.amountUSDT, 0);
+        const actualBalance = merchant.balance;
+        
+        console.log(`💰 [PAYOUT] Merchant ${merchant.username}:`);
+        console.log(`   � Total payments turnover: ${totalPaymentsAmount.toFixed(2)} USDT (gross revenue)`);
+        console.log(`   🔍 Calculated after commission: ${gatewayBreakdown.reduce((sum, gateway) => sum + gateway.amountAfterCommissionUSDT, 0).toFixed(2)} USDT (theoretical net)`);
+        console.log(`   ✅ Actual available balance: ${actualBalance.toFixed(2)} USDT (after payouts)`);
 
         return {
           id: merchant.id,
@@ -607,8 +782,10 @@ export class AdminService {
             usdtErcWallet: merchant.usdtErcWallet,
             usdcPolygonWallet: merchant.usdcPolygonWallet,
           },
-          totalAmountUSDT: merchant.balance, // Баланс = доступная сумма
-          totalAmountAfterCommissionUSDT: merchant.balance, // Баланс уже учитывает комиссию
+          totalAmountUSDT: Math.round(totalPaymentsAmount * 100) / 100,  // ✅ НОВОЕ: Общий оборот (до комиссий)
+          totalAmountAfterCommissionUSDT: Math.round(actualBalance * 100) / 100,  // ✅ ИСПРАВЛЕНО: Доступный баланс
+          totalPayout: Math.round(totalPayout * 100) / 100,  // ✅ НОВОЕ: Общая сумма выплат
+          thisMonth: Math.round(thisMonth * 100) / 100,       // ✅ НОВОЕ: Выплаты за текущий месяц
           paymentsCount,
           oldestPaymentDate: oldestPayment?.paidAt || merchant.createdAt,
           gatewayBreakdown,
@@ -616,11 +793,17 @@ export class AdminService {
       })
     );
 
-    // Подсчитываем итоговые суммы
-    const totalAmountUSDT = merchants.reduce((sum, merchant) => sum + merchant.balance, 0);
-    const totalAmountAfterCommissionUSDT = totalAmountUSDT; // Баланс уже учитывает комиссию
+    // ✅ ИСПРАВЛЕНО: Разделяем подсчет оборота и доступных балансов
+    const totalAmountUSDT = merchantsWithStats.reduce((sum, merchant) => sum + merchant.totalAmountUSDT, 0);
+    const totalAmountAfterCommissionUSDT = merchantsWithStats.reduce((sum, merchant) => sum + merchant.totalAmountAfterCommissionUSDT, 0);
+    const totalPayouts = merchantsWithStats.reduce((sum, merchant) => sum + merchant.totalPayout, 0);
+    const totalThisMonth = merchantsWithStats.reduce((sum, merchant) => sum + merchant.thisMonth, 0);
 
-    console.log(`📊 Merchants awaiting payout: ${total} merchants, ${Math.round(totalAmountAfterCommissionUSDT * 100) / 100} USDT total`);
+    console.log(`📊 Merchants awaiting payout: ${total} merchants`);
+    console.log(`   💰 Total payments turnover: ${Math.round(totalAmountUSDT * 100) / 100} USDT (gross revenue)`);
+    console.log(`   ✅ Total available for payout: ${Math.round(totalAmountAfterCommissionUSDT * 100) / 100} USDT (actual balances)`);
+    console.log(`   💸 Total payouts (all time): ${Math.round(totalPayouts * 100) / 100} USDT`);
+    console.log(`   📅 Total payouts (this month): ${Math.round(totalThisMonth * 100) / 100} USDT`);
 
     return {
       merchants: merchantsWithStats,
@@ -632,169 +815,16 @@ export class AdminService {
       },
       summary: {
         totalMerchants: total,
-        totalAmountUSDT: Math.round(totalAmountUSDT * 100) / 100,
-        totalAmountAfterCommissionUSDT: Math.round(totalAmountAfterCommissionUSDT * 100) / 100,
+        totalAmountUSDT: Math.round(totalAmountUSDT * 100) / 100,      // Общий оборот платежей
+        totalAmountAfterCommissionUSDT: Math.round(totalAmountAfterCommissionUSDT * 100) / 100, // Доступные балансы
+        totalPayout: Math.round(totalPayouts * 100) / 100,            // ✅ НОВОЕ: Общая сумма всех выплат
+        thisMonth: Math.round(totalThisMonth * 100) / 100,            // ✅ НОВОЕ: Выплаты за текущий месяц
       },
     };
-
-    /* ✅ СТАРЫЙ КОД УДАЛЕН - теперь используем поля balance и totalPaidOut
-    const paymentsAwaitingPayout = await prisma.payment.findMany({
-      where: {
-        status: 'PAID',
-        merchantPaid: false,
-        paidAt: { not: null },
-      },
-      include: {
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            telegram: true,
-            shopUrl: true,
-            gatewaySettings: true,
-            usdtPolygonWallet: true,
-            usdtTrcWallet: true,
-            usdtErcWallet: true,
-            usdcPolygonWallet: true,
-          },
-        },
-      },
-    });
-
-    console.log(`💰 Found ${paymentsAwaitingPayout.length} payments awaiting payout`);
-
-    // Группируем по мерчантам
-    const merchantsMap: Record<string, any> = {};
-
-    for (const payment of paymentsAwaitingPayout) {
-      const shopId = payment.shopId;
-      
-      if (!merchantsMap[shopId]) {
-        merchantsMap[shopId] = {
-          id: payment.shop.id,
-          fullName: payment.shop.name,
-          username: payment.shop.username,
-          telegramId: payment.shop.telegram,
-          merchantUrl: payment.shop.shopUrl,
-          wallets: {
-            usdtPolygonWallet: payment.shop.usdtPolygonWallet,
-            usdtTrcWallet: payment.shop.usdtTrcWallet,
-            usdtErcWallet: payment.shop.usdtErcWallet,
-            usdcPolygonWallet: payment.shop.usdcPolygonWallet,
-          },
-          totalAmountUSDT: 0,
-          totalAmountAfterCommissionUSDT: 0,
-          paymentsCount: 0,
-          oldestPaymentDate: payment.paidAt,
-          gatewayBreakdown: {},
-          gatewaySettings: payment.shop.gatewaySettings,
-        };
-      }
-
-      try {
-        // Конвертируем в USDT
-        const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
-        
-        // Получаем настройки комиссий
-        let gatewaySettings: Record<string, any> = {};
-        if (payment.shop.gatewaySettings) {
-          try {
-            gatewaySettings = JSON.parse(payment.shop.gatewaySettings);
-          } catch (error) {
-            console.error(`Error parsing gateway settings for shop ${shopId}:`, error);
-          }
-        }
-
-        // Определяем комиссию (по умолчанию 10%)
-        const commission = gatewaySettings.commission || 10;
-        const amountAfterCommission = amountUSDT * (1 - commission / 100);
-
-        merchantsMap[shopId].totalAmountUSDT += amountUSDT;
-        merchantsMap[shopId].totalAmountAfterCommissionUSDT += amountAfterCommission;
-        merchantsMap[shopId].paymentsCount++;
-
-        // Обновляем дату самого старого платежа
-        if (payment.paidAt! < merchantsMap[shopId].oldestPaymentDate) {
-          merchantsMap[shopId].oldestPaymentDate = payment.paidAt;
-        }
-
-        // Разбивка по шлюзам
-        if (!merchantsMap[shopId].gatewayBreakdown[payment.gateway]) {
-          merchantsMap[shopId].gatewayBreakdown[payment.gateway] = {
-            gateway: payment.gateway,
-            count: 0,
-            amountUSDT: 0,
-            amountAfterCommissionUSDT: 0,
-            commission: commission,
-          };
-        }
-
-        merchantsMap[shopId].gatewayBreakdown[payment.gateway].count++;
-        merchantsMap[shopId].gatewayBreakdown[payment.gateway].amountUSDT += amountUSDT;
-        merchantsMap[shopId].gatewayBreakdown[payment.gateway].amountAfterCommissionUSDT += amountAfterCommission;
-
-      } catch (error) {
-        console.error(`Error processing payment ${payment.id}:`, error);
-      }
-    }
-
-    // Преобразуем в массив и применяем фильтры
-    let merchants = Object.values(merchantsMap).map((merchant: any) => ({
-      ...merchant,
-      totalAmountUSDT: Math.round(merchant.totalAmountUSDT * 100) / 100,
-      totalAmountAfterCommissionUSDT: Math.round(merchant.totalAmountAfterCommissionUSDT * 100) / 100,
-      gatewayBreakdown: Object.values(merchant.gatewayBreakdown).map((gateway: any) => ({
-        ...gateway,
-        amountUSDT: Math.round(gateway.amountUSDT * 100) / 100,
-        amountAfterCommissionUSDT: Math.round(gateway.amountAfterCommissionUSDT * 100) / 100,
-      })),
-    }));
-
-    // Применяем фильтры
-    if (minAmount) {
-      merchants = merchants.filter(merchant => merchant.totalAmountAfterCommissionUSDT >= minAmount);
-    }
-
-    if (search) {
-      const searchLower = search.toLowerCase();
-      merchants = merchants.filter(merchant => 
-        merchant.fullName.toLowerCase().includes(searchLower) ||
-        merchant.username.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Сортируем по сумме (по убыванию)
-    merchants.sort((a, b) => b.totalAmountAfterCommissionUSDT - a.totalAmountAfterCommissionUSDT);
-
-    const total = merchants.length;
-    const paginatedMerchants = merchants.slice(skip, skip + limit);
-
-    // Подсчитываем итоговые суммы
-    const totalAmountUSDT = merchants.reduce((sum, merchant) => sum + merchant.totalAmountUSDT, 0);
-    const totalAmountAfterCommissionUSDT = merchants.reduce((sum, merchant) => sum + merchant.totalAmountAfterCommissionUSDT, 0);
-
-    console.log(`📊 Merchants awaiting payout: ${total} merchants, ${Math.round(totalAmountAfterCommissionUSDT * 100) / 100} USDT total`);
-
-    return {
-      merchants: paginatedMerchants,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-      summary: {
-        totalMerchants: total,
-        totalAmountUSDT: Math.round(totalAmountUSDT * 100) / 100,
-        totalAmountAfterCommissionUSDT: Math.round(totalAmountAfterCommissionUSDT * 100) / 100,
-      },
-    };
-    */
   }
 
   async createPayout(payoutData: CreatePayoutRequest): Promise<PayoutResponse> {
-    const { shopId, amount, network, notes, periodFrom, periodTo } = payoutData;
+    const { shopId, amount, network, wallet, notes, txid, periodFrom, periodTo } = payoutData;
 
     // ✅ НОВОЕ: Используем транзакцию для атомарного обновления баланса и создания выплаты
     const result = await prisma.$transaction(async (tx) => {
@@ -818,11 +848,47 @@ export class AdminService {
       console.log(`   Current balance: ${shop.balance.toFixed(6)} USDT`);
       console.log(`   Payout amount: ${amount.toFixed(6)} USDT`);
       console.log(`   Current total paid out: ${shop.totalPaidOut.toFixed(6)} USDT`);
+      if (txid) console.log(`   Transaction hash: ${txid}`);
 
       // Проверяем, достаточно ли средств на балансе
       if (shop.balance < amount) {
         throw new Error(`Insufficient balance. Available: ${shop.balance.toFixed(6)} USDT, Requested: ${amount.toFixed(6)} USDT`);
       }
+
+      // ✅ НОВОЕ: Определяем адрес кошелька для выплаты
+      let payoutWallet = wallet; // Если кошелек указан явно, используем его
+      
+      if (!payoutWallet) {
+        // Если кошелек не указан, получаем его из настроек магазина
+        const shopWithWallets = await tx.shop.findUnique({
+          where: { id: shopId },
+          select: {
+            usdtPolygonWallet: true,
+            usdtTrcWallet: true,
+            usdtErcWallet: true,
+            usdcPolygonWallet: true,
+          },
+        });
+
+        if (shopWithWallets) {
+          switch (network) {
+            case 'polygon':
+              payoutWallet = shopWithWallets.usdtPolygonWallet || undefined;
+              break;
+            case 'trc20':
+              payoutWallet = shopWithWallets.usdtTrcWallet || undefined;
+              break;
+            case 'erc20':
+              payoutWallet = shopWithWallets.usdtErcWallet || undefined;
+              break;
+            case 'polygon_usdc':
+              payoutWallet = shopWithWallets.usdcPolygonWallet || undefined;
+              break;
+          }
+        }
+      }
+
+      console.log(`💳 Payout wallet for ${network}: ${payoutWallet || 'not specified'}`);
 
       // Создаем выплату
       const payout = await tx.payout.create({
@@ -830,7 +896,9 @@ export class AdminService {
           shopId,
           amount,
           network,
+          // wallet: payoutWallet, // ✅ TODO: Раскомментировать после обновления Prisma Client
           status: 'COMPLETED', // Всегда COMPLETED для админских выплат
+          txid, // ✅ НОВОЕ: Сохраняем хеш транзакции если указан
           notes,
           periodFrom: periodFrom ? new Date(periodFrom) : null,
           periodTo: periodTo ? new Date(periodTo) : null,
@@ -923,7 +991,19 @@ export class AdminService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          shopId: true,
+          amount: true,
+          network: true,
+          // wallet: true, // ✅ TODO: Раскомментировать после обновления Prisma Client
+          status: true,
+          txid: true,
+          notes: true,
+          periodFrom: true,
+          periodTo: true,
+          createdAt: true,
+          paidAt: true,
           shop: {
             select: {
               name: true,
@@ -943,6 +1023,7 @@ export class AdminService {
         shopUsername: payout.shop.username,
         amount: payout.amount,
         network: payout.network,
+        // wallet: payout.wallet, // ✅ TODO: Раскомментировать после обновления Prisma Client
         status: payout.status,
         txid: payout.txid,
         notes: payout.notes,
@@ -999,32 +1080,91 @@ export class AdminService {
   }
 
   async getAllPayments(filters: any): Promise<any> {
-    const { page, limit, status, gateway, shopId, dateFrom, dateTo, search } = filters;
+    const { page, limit, status, gateway, shopId, dateFrom, dateTo, search, currency, sortBy, sortOrder } = filters;
     const skip = (page - 1) * limit;
+
+    console.log('📊 Getting payments with filters:', filters);
+
+    // ✅ ОТЛАДКА: Получаем список всех уникальных gateway в системе
+    const availableGateways = await prisma.payment.groupBy({
+      by: ['gateway'],
+      _count: { gateway: true },
+    });
+    console.log('📊 Available gateways in database:', availableGateways.map(g => `${g.gateway} (${g._count.gateway} payments)`));
+    
+    // Если запрашивается конкретный gateway, проверяем его существование
+    if (gateway) {
+      const requestedGatewayExists = availableGateways.some(g => g.gateway.toLowerCase() === gateway.toLowerCase());
+      if (!requestedGatewayExists && gateway.toLowerCase() !== 'test_gateway') {
+        console.log(`⚠️ Requested gateway '${gateway}' not found. Available gateways: ${availableGateways.map(g => g.gateway).join(', ')}`);
+      }
+    }
 
     const where: any = {};
     
     if (status) {
       where.status = status.toUpperCase();
     }
-    
-    if (gateway) {
-      where.gateway = gateway.toLowerCase();
+
+    // Always exclude test gateway from admin payments list unless specifically requested
+    if (!gateway) {
+      // If no specific gateway is requested, exclude test_gateway by default
+      where.gateway = { not: 'test_gateway' };
+    } else if (gateway && (gateway.toLowerCase() === 'test_gateway' || gateway === '0000')) {
+      // If test_gateway is specifically requested (by name or ID), allow it (for debugging purposes)
+      where.gateway = 'test_gateway';
+    } else {
+      // ✅ ИСПРАВЛЕНО: Поддерживаем как ID gateway, так и названия
+      let gatewayName = gateway;
+      
+      // Сначала пробуем конвертировать ID в имя (например, "0010" -> "rapyd")
+      const convertedFromId = getGatewayNameById(gateway);
+      if (convertedFromId) {
+        gatewayName = convertedFromId;
+        console.log(`🔄 Converted gateway ID '${gateway}' to name '${gatewayName}'`);
+      } else {
+        // Если не ID, то пробуем конвертировать название в ID, а потом в имя
+        // (например, "Rapyd" -> "0010" -> "rapyd")
+        const gatewayIdFromName = getGatewayIdByName(gateway);
+        if (gatewayIdFromName) {
+          const gatewayNameFromId = getGatewayNameById(gatewayIdFromName);
+          if (gatewayNameFromId) {
+            gatewayName = gatewayNameFromId;
+            console.log(`🔄 Converted gateway name '${gateway}' -> ID '${gatewayIdFromName}' -> name '${gatewayName}'`);
+          }
+        } else {
+          // Если ничего не подошло, используем как есть
+          console.log(`🔍 Using gateway '${gateway}' as is (not found in mappings)`);
+        }
+      }
+      
+      // Check if the requested gateway exists by doing a quick count
+      const gatewayExists = await prisma.payment.count({
+        where: { gateway: gatewayName.toLowerCase() },
+        take: 1,
+      });
+      
+      if (gatewayExists === 0) {
+        console.log(`⚠️ Gateway '${gatewayName}' (from '${gateway}') not found in database, returning empty result`);
+        // If gateway doesn't exist, use a filter that will return no results
+        where.gateway = 'NONEXISTENT_GATEWAY_FILTER';
+      } else {
+        // Gateway exists, use the filter
+        where.gateway = gatewayName.toLowerCase();
+        console.log(`✅ Using gateway filter: '${gatewayName}' (from '${gateway}')`);
+      }
     }
 
-    // Always exclude test gateway from admin payments list
-    where.gateway = where.gateway ? where.gateway : { not: 'test_gateway' };
-    if (typeof where.gateway === 'string' && where.gateway !== 'test_gateway') {
-      // If specific gateway is requested and it's not test_gateway, keep the filter
-    } else if (typeof where.gateway === 'string' && where.gateway === 'test_gateway') {
-      // If test_gateway is specifically requested, allow it (for debugging purposes)
-    } else {
-      // Default case: exclude test_gateway
-      where.gateway = { not: 'test_gateway' };
-    }
+    console.log('📊 Gateway filter applied:', where.gateway);
 
     if (shopId) {
       where.shopId = shopId;
+    }
+
+    // ✅ НОВОЕ: Фильтр по валюте
+    if (currency) {
+      where.currency = currency.toUpperCase();
+      console.log(`💱 Currency filter applied: ${currency.toUpperCase()}`);
     }
 
     if (dateFrom || dateTo) {
@@ -1039,6 +1179,7 @@ export class AdminService {
 
     if (search) {
       where.OR = [
+        { id: { contains: search, mode: 'insensitive' } }, // ✅ ДОБАВЛЕНО: Поиск по ID платежа
         { orderId: { contains: search, mode: 'insensitive' } },
         { gatewayOrderId: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
@@ -1047,12 +1188,30 @@ export class AdminService {
       ];
     }
 
+    // ✅ ОТЛАДКА: Показываем финальные условия фильтрации
+    console.log('📊 Final WHERE conditions:', JSON.stringify(where, null, 2));
+
+    // ✅ НОВОЕ: Настройка сортировки
+    let orderBy: any = { createdAt: 'desc' }; // По умолчанию сортируем по дате создания
+
+    if (sortBy) {
+      const validSortFields = ['amount', 'createdAt', 'updatedAt', 'status', 'gateway', 'currency'];
+      const validSortOrders = ['asc', 'desc'];
+      
+      if (validSortFields.includes(sortBy)) {
+        const order = validSortOrders.includes(sortOrder) ? sortOrder : 'desc';
+        orderBy = { [sortBy]: order };
+        
+        console.log(`📊 Sorting payments by ${sortBy} in ${order} order`);
+      }
+    }
+
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: orderBy,
         include: {
           shop: {
             select: {
@@ -1066,25 +1225,7 @@ export class AdminService {
     ]);
 
     return {
-      payments: payments.map(payment => ({
-        id: payment.id,
-        shopId: payment.shopId,
-        gateway: payment.gateway,
-        amount: payment.amount,
-        currency: payment.currency,
-        status: payment.status,
-        orderId: payment.orderId,
-        gatewayOrderId: payment.gatewayOrderId,
-        customerEmail: payment.customerEmail,
-        customerName: payment.customerName,
-        customerCountry: payment.customerCountry,
-        customerIp: payment.customerIp,
-        customerUa: payment.customerUa,
-        failureMessage: payment.failureMessage,
-        createdAt: payment.createdAt,
-        updatedAt: payment.updatedAt,
-        shop: payment.shop,
-      })),
+      payments: payments,
       pagination: {
         page,
         limit,
@@ -1178,7 +1319,7 @@ export class AdminService {
         updateData.chargebackAmount = chargebackAmount;
       }
 
-      // ✅ НОВОЕ: Логика обновления баланса мерчанта
+      // ✅ ИСПРАВЛЕНО: Логика обновления баланса мерчанта с учетом комиссий
       let balanceChange = 0;
       let newShopBalance = currentPayment.shop.balance;
 
@@ -1190,29 +1331,90 @@ export class AdminService {
         const amountUSDT = await currencyService.convertToUSDT(currentPayment.amount, currentPayment.currency);
         updateData.amountUSDT = amountUSDT;
         
-        // Добавляем к балансу
-        balanceChange = amountUSDT;
-        newShopBalance += amountUSDT;
+        // ✅ ИСПРАВЛЕНО: Получаем настройки комиссий и вычисляем сумму после комиссии
+        let commission = 10; // По умолчанию 10%
         
-        console.log(`💰 Payment ${id} became PAID: +${amountUSDT.toFixed(6)} USDT to balance`);
+        // Получаем настройки магазина
+        const shopWithSettings = await tx.shop.findUnique({
+          where: { id: currentPayment.shopId },
+          select: { gatewaySettings: true },
+        });
+        
+        if (shopWithSettings?.gatewaySettings) {
+          try {
+            const gatewaySettings = JSON.parse(shopWithSettings.gatewaySettings);
+            
+            // Ищем настройки шлюза без учета регистра
+            for (const [key, value] of Object.entries(gatewaySettings)) {
+              if (key.toLowerCase() === currentPayment.gateway.toLowerCase()) {
+                commission = (value as any).commission || 10;
+                break;
+              }
+            }
+          } catch (error) {
+            console.error(`Error parsing gateway settings for payment ${id}:`, error);
+          }
+        }
+        
+        // ✅ ИСПРАВЛЕНО: Добавляем к балансу сумму ПОСЛЕ ВЫЧЕТА КОМИССИИ
+        const merchantAmount = amountUSDT * (1 - commission / 100);
+        balanceChange = merchantAmount;
+        newShopBalance += merchantAmount;
+        
+        console.log(`💰 Payment ${id} became PAID:`);
+        console.log(`   Full amount: ${amountUSDT.toFixed(6)} USDT`);
+        console.log(`   Gateway: ${currentPayment.gateway}, Commission: ${commission}%`);
+        console.log(`   Merchant gets: ${merchantAmount.toFixed(6)} USDT (after ${commission}% commission)`);
+        console.log(`   Added to balance: +${merchantAmount.toFixed(6)} USDT`);
       }
       
       // Переход из статуса PAID
       else if (oldStatus === 'PAID' && newStatus !== 'PAID') {
         if (currentPayment.amountUSDT) {
-          // Вычитаем ранее добавленную сумму
-          balanceChange = -currentPayment.amountUSDT;
-          newShopBalance -= currentPayment.amountUSDT;
+          // ✅ ИСПРАВЛЕНО: При отмене PAID статуса, вычитаем сумму с учетом комиссии
+          let commission = 10; // По умолчанию 10%
+          
+          // Получаем настройки магазина
+          const shopWithSettings = await tx.shop.findUnique({
+            where: { id: currentPayment.shopId },
+            select: { gatewaySettings: true },
+          });
+          
+          if (shopWithSettings?.gatewaySettings) {
+            try {
+              const gatewaySettings = JSON.parse(shopWithSettings.gatewaySettings);
+              
+              // Ищем настройки шлюза без учета регистра
+              for (const [key, value] of Object.entries(gatewaySettings)) {
+                if (key.toLowerCase() === currentPayment.gateway.toLowerCase()) {
+                  commission = (value as any).commission || 10;
+                  break;
+                }
+              }
+            } catch (error) {
+              console.error(`Error parsing gateway settings for payment ${id}:`, error);
+            }
+          }
+          
+          // ✅ ИСПРАВЛЕНО: Вычитаем сумму ПОСЛЕ ВЫЧЕТА КОМИССИИ (ту же, что добавляли)
+          const merchantAmount = currentPayment.amountUSDT * (1 - commission / 100);
+          balanceChange = -merchantAmount;
+          newShopBalance -= merchantAmount;
           updateData.amountUSDT = null;
           
-          console.log(`💰 Payment ${id} no longer PAID: -${currentPayment.amountUSDT.toFixed(6)} USDT from balance`);
+          console.log(`💰 Payment ${id} no longer PAID:`);
+          console.log(`   Full amount: ${currentPayment.amountUSDT.toFixed(6)} USDT`);
+          console.log(`   Gateway: ${currentPayment.gateway}, Commission: ${commission}%`);
+          console.log(`   Merchant loses: ${merchantAmount.toFixed(6)} USDT (after ${commission}% commission)`);
+          console.log(`   Subtracted from balance: -${merchantAmount.toFixed(6)} USDT`);
         }
       }
       
       // Специальная обработка CHARGEBACK
       if (newStatus === 'CHARGEBACK') {
         if (oldStatus === 'PAID' && currentPayment.amountUSDT) {
-          // Уже обработано выше - вычли amountUSDT
+          // ✅ ИСПРАВЛЕНО: При CHARGEBACK логика вычета суммы уже обработана выше
+          console.log(`💸 CHARGEBACK: Merchant amount already deducted from balance`);
         }
         
         // Дополнительно вычитаем штраф
@@ -1657,5 +1859,63 @@ export class AdminService {
     await prisma.shop.delete({
       where: { id },
     });
+  }
+
+  // ✅ ДОБАВЛЕНО: Helper method to generate daily statistics (скопировано из shopService)
+  private generateDailyStatistics(payments: any[], startDate: Date, endDate: Date): {
+    dailyRevenue: Array<{ date: string; amount: number }>;
+    dailyPayments: Array<{ date: string; count: number }>;
+  } {
+    // Create a map for each day in the period
+    const dailyData = new Map<string, { revenue: number; count: number }>();
+    
+    // Initialize all days in the period with zero values
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      dailyData.set(dateStr, { revenue: 0, count: 0 });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Process payments and group by date
+    for (const payment of payments) {
+      const paymentDate = payment.createdAt.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const dayData = dailyData.get(paymentDate);
+      
+      if (dayData) {
+        // Count all payments
+        dayData.count += 1;
+        
+        // Add revenue only for PAID payments
+        if (payment.status === 'PAID') {
+          if (payment.amountUSDT) {
+            // Use cached USDT amount if available
+            dayData.revenue += payment.amountUSDT;
+          } else {
+            // Fallback for old payments without amountUSDT (это может быть медленно, но нужно)
+            // В реальности лучше запустить миграцию для пересчета всех amountUSDT
+            console.log(`⚠️ Payment ${payment.id} missing amountUSDT, using fallback conversion`);
+          }
+        }
+      }
+    }
+    
+    // Convert map to arrays
+    const dailyRevenue: Array<{ date: string; amount: number }> = [];
+    const dailyPayments: Array<{ date: string; count: number }> = [];
+    
+    for (const [date, data] of dailyData) {
+      dailyRevenue.push({
+        date,
+        amount: Math.round(data.revenue * 100) / 100, // Round to 2 decimal places
+      });
+      
+      dailyPayments.push({
+        date,
+        count: data.count,
+      });
+    }
+    
+    return { dailyRevenue, dailyPayments };
   }
 }

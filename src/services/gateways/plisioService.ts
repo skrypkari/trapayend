@@ -79,7 +79,7 @@ export class PlisioService {
       description: description,
       success_url: successUrl,
       fail_url: failUrl,
-      callback_url: 'https://apitest.trapay.uk/api/webhooks/gateway/plisio',
+      callback_url: 'https://api.trapay.uk/api/webhooks/gateway/plisio',
     });
 
     // ✅ ДОБАВЛЕНО: Логика для source_currency и currency
@@ -278,14 +278,14 @@ export class PlisioService {
   // ✅ ОБНОВЛЕНО: Updated processWebhook method with tx_urls extraction
   async processWebhook(webhookData: any): Promise<{
     paymentId: string;
-    status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
+    status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' | 'PROCESSING';
     amount?: number;
     currency?: string;
     txUrls?: string[]; // ✅ НОВОЕ: Добавлено поле для transaction URLs
   }> {
     console.log('Processing Plisio webhook:', webhookData);
     
-    let status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' = 'PENDING';
+    let status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' | 'PROCESSING' = 'PENDING';
     
     switch (webhookData.status?.toLowerCase()) {
       case 'completed':
@@ -300,9 +300,13 @@ export class PlisioService {
         status = 'FAILED';
         break;
       case 'new':
+        status = 'PENDING';   // ⏳ Новый платеж - в ожидании
+        break;
       case 'pending':
+        status = 'PROCESSING'; // 🔄 В обработке
+        break;
       default:
-        status = 'PENDING';
+        status = 'PENDING';   // ⏳ По умолчанию - в ожидании
         break;
     }
     

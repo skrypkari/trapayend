@@ -224,6 +224,7 @@ model Payout {
   shopId     String       @map("shop_id")
   amount     Float
   network    String       // Network type (e.g., "polygon", "trc20", "erc20")
+  wallet     String?      // ✅ НОВОЕ: Адрес кошелька на момент выплаты
   status     PayoutStatus @default(COMPLETED) // Always COMPLETED for admin-created payouts
   txid       String?
   notes      String?      @db.Text // Optional notes from admin

@@ -3,6 +3,7 @@ export interface PayoutStats {
   awaitingPayout: number;   // Сумма всех ожидающих выплат (eligible for payout), с вычетом комиссии, в USDT
   thisMonth: number;        // Сумма всех выплат в текущем месяце, с учетом комиссии, в USDT
   availableBalance: number; // Сумма всех ожидающих выплат без вычета комиссии, в USDT
+  totalPayments: number;    // ✅ НОВОЕ: Общее количество всех PAID платежей в системе
 }
 
 export interface PaymentForPayout {
@@ -34,8 +35,10 @@ export interface MerchantAwaitingPayout {
     usdcPolygonWallet?: string | null;
   };
   // Payout amounts
-  totalAmountUSDT: number;           // Общая сумма без комиссии в USDT
-  totalAmountAfterCommissionUSDT: number; // Сумма с вычетом комиссии в USDT
+  totalAmountUSDT: number;           // Общая сумма всех PAID платежей (до комиссии)
+  totalAmountAfterCommissionUSDT: number; // Актуальный доступный баланс
+  totalPayout: number;               // ✅ НОВОЕ: Общая сумма всех выплат мерчанту
+  thisMonth: number;                 // ✅ НОВОЕ: Сумма выплат за текущий месяц
   // Payment details
   paymentsCount: number;             // Количество платежей ожидающих выплату
   oldestPaymentDate: Date;           // Дата самого старого платежа
@@ -56,17 +59,19 @@ export interface MerchantsAwaitingPayoutFilters {
   search?: string;    // Поиск по имени или username
 }
 
-// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты
+// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты, txid и wallet
 export interface CreatePayoutRequest {
   shopId: string;
   amount: number;
   network: string;
+  wallet?: string;         // ✅ НОВОЕ: Адрес кошелька на момент выплаты
   notes?: string;
+  txid?: string;           // ✅ НОВОЕ: Опциональный хеш транзакции
   periodFrom?: string; // ✅ НОВОЕ: Начало периода выплаты (ISO date string)
   periodTo?: string;   // ✅ НОВОЕ: Конец периода выплаты (ISO date string)
 }
 
-// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты
+// ✅ ОБНОВЛЕНО: Добавлены поля периода выплаты и wallet
 export interface PayoutResponse {
   id: string;
   shopId: string;
@@ -74,6 +79,7 @@ export interface PayoutResponse {
   shopUsername: string;
   amount: number;
   network: string;
+  wallet?: string | null;   // ✅ НОВОЕ: Адрес кошелька на момент выплаты
   status: string;
   txid?: string | null;
   notes?: string | null;

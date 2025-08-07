@@ -199,6 +199,9 @@ export class CoinToPayStatusService {
         shopId: true,
         createdAt: true,
         gateway: true, // ✅ ДОБАВЛЕНО: Проверяем gateway
+        remitterIban: true, // ✅ ДОБАВЛЕНО: Включаем IBAN для Telegram уведомлений
+        customerIp: true, // ✅ ДОБАВЛЕНО: Включаем IP для Telegram уведомлений
+        customerUa: true, // ✅ ДОБАВЛЕНО: Включаем User Agent для Telegram уведомлений
         shop: {
           select: {
             id: true,
@@ -375,6 +378,9 @@ export class CoinToPayStatusService {
           status: true,
           shopId: true,
           createdAt: true,
+          remitterIban: true, // ✅ ДОБАВЛЕНО: Включаем IBAN для Telegram уведомлений
+          customerIp: true, // ✅ ДОБАВЛЕНО: Включаем IP для Telegram уведомлений
+          customerUa: true, // ✅ ДОБАВЛЕНО: Включаем User Agent для Telegram уведомлений
           shop: {
             select: {
               id: true,
