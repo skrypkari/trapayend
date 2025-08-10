@@ -115,6 +115,7 @@ export interface MerchantStatistics {
   merchantEarnings: number;     // Заработано мерчантов в USDT (оборот - комиссия шлюза)
   gatewayEarnings: number;      // Заработано шлюзом в USDT (комиссия)
   totalPaidOut: number;         // Выплачено в USDT (сумма всех выплат)
+  pendingPayout: number;        // Ожидающие выплаты в USDT (сумма всех PENDING выплат)
   averageCheck: number;         // Средний чек в USDT
   
   // Дополнительная информация

@@ -85,8 +85,22 @@ export class RapydService {
       payment_method_types_include: ['gb_visa_card', 'gb_mastercard_card'],
       custom_elements: {
         display_description: true,
-      },
+      }
     };
+
+    // ✅ НОВОЕ: Добавляем поля для конвертации валют если currency не EUR
+    if (upperCurrency !== 'EUR') {
+      const expirationTime = Math.floor(Date.now() / 1000) + (30 * 60); // 30 минут в unix time
+      
+      requestBody.fixed_side = 'buy';
+      requestBody.requested_currency = 'EUR';
+      requestBody.expiration = expirationTime;
+      
+      console.log(`💱 Adding currency conversion fields for ${upperCurrency} -> EUR:`);
+      console.log(`   fixed_side: buy`);
+      console.log(`   requested_currency: EUR`);
+      console.log(`   expiration: ${expirationTime} (${new Date(expirationTime * 1000).toISOString()})`);
+    }
 
     const startTime = Date.now();
 

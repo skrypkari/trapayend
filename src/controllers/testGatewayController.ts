@@ -102,6 +102,7 @@ export class TestGatewayController {
             },
           },
         },
+        // ✅ ДОБАВЛЕНО: Включаем paymentLinkId для обновления счетчика
       });
 
       if (!payment) {
@@ -158,6 +159,51 @@ export class TestGatewayController {
         where: { id: payment.id },
         data: updateData,
       });
+
+      // ✅ ДОБАВЛЕНО: Обновляем payment link counter для test gateway
+      if (result.status === 'PAID' && payment.paymentLinkId) {
+        console.log(`📈 Test Gateway: Payment ${payment.id} became PAID, updating payment link counter`);
+        
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Получаем текущую payment link
+            const paymentLink = await tx.paymentLink.findUnique({
+              where: { id: payment.paymentLinkId! }, // ! означает что мы уверены что не null
+              select: { 
+                id: true, 
+                type: true, 
+                currentPayments: true, 
+                status: true 
+              },
+            });
+
+            if (paymentLink) {
+              console.log(`📈 Found payment link ${paymentLink.id}: type=${paymentLink.type}, currentPayments=${paymentLink.currentPayments}, status=${paymentLink.status}`);
+
+              // Увеличиваем счетчик платежей
+              const newCurrentPayments = paymentLink.currentPayments + 1;
+              
+              // Для SINGLE ссылок устанавливаем статус COMPLETED
+              const newLinkStatus = (paymentLink.type === 'SINGLE') ? 'COMPLETED' : paymentLink.status;
+
+              await tx.paymentLink.update({
+                where: { id: payment.paymentLinkId! }, // ! означает что мы уверены что не null
+                data: {
+                  currentPayments: newCurrentPayments,
+                  status: newLinkStatus,
+                  updatedAt: new Date(),
+                },
+              });
+
+              console.log(`✅ Payment link ${paymentLink.id} updated: currentPayments=${paymentLink.currentPayments} -> ${newCurrentPayments}, status=${paymentLink.status} -> ${newLinkStatus}`);
+            } else {
+              console.log(`❌ Payment link ${payment.paymentLinkId} not found`);
+            }
+          });
+        } catch (linkError) {
+          console.error('❌ Failed to update payment link counter for test gateway:', linkError);
+        }
+      }
 
       // Create webhook log
       await prisma.webhookLog.create({

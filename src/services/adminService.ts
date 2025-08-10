@@ -399,8 +399,22 @@ export class AdminService {
             break;
           }
         }
-        const commissionAmount = amountUSDT * (commission / 100);
-        const merchantAmount = amountUSDT - commissionAmount;
+        
+        // ✅ НОВОЕ: Используем сохраненное значение amountAfterGatewayCommissionUSDT если доступно
+        let merchantAmount: number;
+        let commissionAmount: number;
+        
+        if ((payment as any).amountAfterGatewayCommissionUSDT !== null && (payment as any).amountAfterGatewayCommissionUSDT !== undefined) {
+          // Используем уже рассчитанную сумму с учетом комиссии
+          merchantAmount = (payment as any).amountAfterGatewayCommissionUSDT;
+          commissionAmount = amountUSDT - merchantAmount;
+          console.log(`📊 Using saved amountAfterGatewayCommissionUSDT: ${merchantAmount.toFixed(6)} USDT for payment ${payment.id}`);
+        } else {
+          // Рассчитываем комиссию вручную (для старых платежей)
+          commissionAmount = amountUSDT * (commission / 100);
+          merchantAmount = amountUSDT - commissionAmount;
+          console.log(`📊 Calculating commission manually for payment ${payment.id}: ${commission}% from ${amountUSDT.toFixed(6)} USDT`);
+        }
 
         // Общие суммы
         totalTurnover += amountUSDT;
@@ -487,7 +501,9 @@ export class AdminService {
 
     // Получаем данные о выплатах
     let totalPaidOut = 0;
+    let pendingPayout = 0;
     if (filters.shopId) {
+      // Completed payouts
       const payouts = await prisma.payout.findMany({
         where: {
           shopId: filters.shopId,
@@ -500,6 +516,20 @@ export class AdminService {
         select: { amount: true },
       });
       totalPaidOut = payouts.reduce((sum, payout) => sum + payout.amount, 0);
+
+      // Pending payouts
+      const pendingPayouts = await prisma.payout.findMany({
+        where: {
+          shopId: filters.shopId,
+          status: 'PENDING',
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        select: { amount: true },
+      });
+      pendingPayout = pendingPayouts.reduce((sum, payout) => sum + payout.amount, 0);
     }
 
     // Рассчитываем общие метрики
@@ -515,6 +545,7 @@ export class AdminService {
       merchantEarnings: Math.round(merchantEarnings * 100) / 100,
       gatewayEarnings: Math.round(gatewayEarnings * 100) / 100,
       totalPaidOut: Math.round(totalPaidOut * 100) / 100,
+      pendingPayout: Math.round(pendingPayout * 100) / 100,
       averageCheck: Math.round(averageCheck * 100) / 100,
       totalPayments,
       successfulPayments,
@@ -552,7 +583,9 @@ export class AdminService {
     console.log(`   💰 Total turnover: ${result.totalTurnover} USDT`);
     console.log(`   👤 Merchant earnings: ${result.merchantEarnings} USDT`);
     console.log(`   🏪 Gateway earnings: ${result.gatewayEarnings} USDT`);
-    console.log(`   📊 Total payments: ${result.totalPayments}`);
+    console.log(`   � Total paid out: ${result.totalPaidOut} USDT`);
+    console.log(`   ⏳ Pending payout: ${result.pendingPayout} USDT`);
+    console.log(`   �📊 Total payments: ${result.totalPayments}`);
 
     return result;
   }
@@ -590,12 +623,32 @@ export class AdminService {
       'rapyd': 'Rapyd',
       'noda': 'Noda',
       'cointopay': 'CoinToPay',
+      'cointopay2': 'Open Banking 2', // ✅ ДОБАВЛЕНО: Маппинг для CoinToPay2
       'klyme_eu': 'KLYME EU',
       'klyme_gb': 'KLYME GB',
       'klyme_de': 'KLYME DE',
+      'mastercard': 'MasterCard', // ✅ ДОБАВЛЕНО: Маппинг для MasterCard
     };
 
     return gatewayDisplayNames[gatewayName] || gatewayName;
+  }
+
+  // ✅ ДОБАВЛЕНО: Обратный маппинг от отображаемого имени к внутреннему
+  private getGatewayInternalName(displayName: string): string {
+    const displayToInternal: Record<string, string> = {
+      'Test Gateway': 'test_gateway',
+      'Plisio': 'plisio',
+      'Rapyd': 'rapyd',
+      'Noda': 'noda',
+      'CoinToPay': 'cointopay',
+      'CoinToPay2': 'cointopay2', // ✅ ДОБАВЛЕНО: Обратный маппинг для CoinToPay2
+      'KLYME EU': 'klyme_eu',
+      'KLYME GB': 'klyme_gb',
+      'KLYME DE': 'klyme_de',
+      'MasterCard': 'mastercard', // ✅ ДОБАВЛЕНО: Обратный маппинг для MasterCard
+    };
+
+    return displayToInternal[displayName] || displayName.toLowerCase();
   }
 
   async getMerchantsAwaitingPayout(filters: MerchantsAwaitingPayoutFilters): Promise<{
@@ -748,12 +801,12 @@ export class AdminService {
               }
             }
 
-            const amountUSDT = stat._sum.amountUSDT || 0;
+            const amountUSDT = stat._sum?.amountUSDT || 0;
             const amountAfterCommissionUSDT = amountUSDT * (1 - commission / 100);
 
             return {
               gateway: stat.gateway,
-              count: stat._count.id,
+              count: stat._count?.id || 0,
               amountUSDT: Math.round(amountUSDT * 100) / 100,
               amountAfterCommissionUSDT: Math.round(amountAfterCommissionUSDT * 100) / 100,
               commission: commission,
@@ -1356,8 +1409,22 @@ export class AdminService {
           }
         }
         
-        // ✅ ИСПРАВЛЕНО: Добавляем к балансу сумму ПОСЛЕ ВЫЧЕТА КОМИССИИ
-        const merchantAmount = amountUSDT * (1 - commission / 100);
+        // ✅ НОВОЕ: Используем сохраненное значение amountAfterGatewayCommissionUSDT если доступно
+        let merchantAmount: number;
+        
+        if ((currentPayment as any).amountAfterGatewayCommissionUSDT !== null && (currentPayment as any).amountAfterGatewayCommissionUSDT !== undefined) {
+          // Используем уже рассчитанную сумму с учетом комиссии
+          merchantAmount = (currentPayment as any).amountAfterGatewayCommissionUSDT;
+          console.log(`📊 [ADMIN] Using saved amountAfterGatewayCommissionUSDT: ${merchantAmount.toFixed(6)} USDT for payment ${id}`);
+        } else {
+          // Рассчитываем комиссию вручную (для старых платежей)
+          merchantAmount = amountUSDT * (1 - commission / 100);
+          console.log(`📊 [ADMIN] Calculating commission manually for payment ${id}: ${commission}% from ${amountUSDT.toFixed(6)} USDT`);
+          
+          // ✅ НОВОЕ: Сохраняем рассчитанную сумму с учетом комиссии шлюза
+          updateData.amountAfterGatewayCommissionUSDT = merchantAmount;
+        }
+        
         balanceChange = merchantAmount;
         newShopBalance += merchantAmount;
         
@@ -1396,11 +1463,14 @@ export class AdminService {
             }
           }
           
-          // ✅ ИСПРАВЛЕНО: Вычитаем сумму ПОСЛЕ ВЫЧЕТА КОМИССИИ (ту же, что добавляли)
-          const merchantAmount = currentPayment.amountUSDT * (1 - commission / 100);
+          // ✅ ИСПРАВЛЕНО: Используем сохраненную сумму после комиссии или вычисляем
+          // TODO: После миграции добавить поле amountAfterGatewayCommissionUSDT
+          const merchantAmount = /* currentPayment.amountAfterGatewayCommissionUSDT || */ 
+                                currentPayment.amountUSDT * (1 - commission / 100);
           balanceChange = -merchantAmount;
           newShopBalance -= merchantAmount;
           updateData.amountUSDT = null;
+          updateData.amountAfterGatewayCommissionUSDT = null;
           
           console.log(`💰 Payment ${id} no longer PAID:`);
           console.log(`   Full amount: ${currentPayment.amountUSDT.toFixed(6)} USDT`);
@@ -1487,10 +1557,19 @@ export class AdminService {
   }
 
   async updateUser(id: string, updateData: UpdateUserRequest): Promise<UserResponse> {
+    const callId = Math.random().toString(36).substr(2, 9);
+    console.log(`🎯 updateUser called with ID: ${callId}, userId: ${id}`);
+    
     const updatePayload: any = { ...updateData };
 
-    if (updateData.password) {
+    // ✅ ОБНОВЛЕНО: Обновляем пароль только если он передан и не пустой
+    if (updateData.password && updateData.password.trim() !== '') {
+      console.log(`🔐 [${callId}] Updating password for user ${id}`);
       updatePayload.password = await bcrypt.hash(updateData.password, 12);
+    } else {
+      console.log(`🔐 [${callId}] Password not provided or empty, skipping password update`);
+      // Удаляем поле password из updatePayload, чтобы оно не попало в базу данных
+      delete updatePayload.password;
     }
 
     if (updateData.fullName) {
@@ -1509,13 +1588,19 @@ export class AdminService {
     }
 
     if (updateData.gateways) {
-      updatePayload.paymentGateways = JSON.stringify(updateData.gateways);
+      // ✅ ДОБАВЛЕНО: Преобразование отображаемых имен в внутренние имена
+      const internalGateways = updateData.gateways.map(gateway => this.getGatewayInternalName(gateway));
+      console.log(`🔄 Gateway mapping:`, updateData.gateways, '->', internalGateways);
+      updatePayload.paymentGateways = JSON.stringify(internalGateways);
       delete updatePayload.gateways;
     }
 
     if (updateData.gatewaySettings) {
+      console.log(`🔧 [${callId}] Gateway settings before saving:`, updateData.gatewaySettings);
       updatePayload.gatewaySettings = JSON.stringify(updateData.gatewaySettings);
-      delete updatePayload.gatewaySettings;
+      console.log(`🔧 [${callId}] Gateway settings JSON string:`, updatePayload.gatewaySettings);
+      // ✅ ИСПРАВЛЕНО: НЕ удаляем gatewaySettings из updatePayload! Это поле должно попасть в базу данных
+      // delete updatePayload.gatewaySettings;
     }
 
     if (updateData.wallets) {
@@ -1554,6 +1639,8 @@ export class AdminService {
         createdAt: true,
       },
     });
+
+    console.log(`🎯 [${callId}] User updated, gatewaySettings from DB:`, updatedUser.gatewaySettings);
 
     return {
       id: updatedUser.id,
@@ -1696,24 +1783,30 @@ export class AdminService {
     ]);
 
     return {
-      users: users.map(user => ({
-        id: user.id,
-        fullName: user.name,
-        username: user.username,
-        telegramId: user.telegram,
-        merchantUrl: user.shopUrl,
-        gateways: user.paymentGateways ? JSON.parse(user.paymentGateways) : null,
-        gatewaySettings: user.gatewaySettings ? JSON.parse(user.gatewaySettings) : null,
-        publicKey: user.publicKey,
-        wallets: {
-          usdtPolygonWallet: user.usdtPolygonWallet,
-          usdtTrcWallet: user.usdtTrcWallet,
-          usdtErcWallet: user.usdtErcWallet,
-          usdcPolygonWallet: user.usdcPolygonWallet,
-        },
-        status: user.status,
-        createdAt: user.createdAt,
-      })),
+      users: users.map(user => {
+        // ✅ ДОБАВЛЕНО: Преобразование внутренних имен gateway'ев в отображаемые имена
+        const internalGateways = user.paymentGateways ? JSON.parse(user.paymentGateways) : null;
+        const displayGateways = internalGateways ? internalGateways.map((gateway: string) => this.getGatewayDisplayName(gateway)) : null;
+        
+        return {
+          id: user.id,
+          fullName: user.name,
+          username: user.username,
+          telegramId: user.telegram,
+          merchantUrl: user.shopUrl,
+          gateways: displayGateways,
+          gatewaySettings: user.gatewaySettings ? JSON.parse(user.gatewaySettings) : null,
+          publicKey: user.publicKey,
+          wallets: {
+            usdtPolygonWallet: user.usdtPolygonWallet,
+            usdtTrcWallet: user.usdtTrcWallet,
+            usdtErcWallet: user.usdtErcWallet,
+            usdcPolygonWallet: user.usdcPolygonWallet,
+          },
+          status: user.status,
+          createdAt: user.createdAt,
+        };
+      }),
       pagination: {
         page,
         limit,
@@ -1746,13 +1839,21 @@ export class AdminService {
 
     if (!user) return null;
 
+    // ✅ ДОБАВЛЕНО: Преобразование внутренних имен gateway'ев в отображаемые имена
+    const internalGateways = user.paymentGateways ? JSON.parse(user.paymentGateways) : null;
+    const displayGateways = internalGateways ? internalGateways.map((gateway: string) => this.getGatewayDisplayName(gateway)) : null;
+    
+    if (internalGateways && displayGateways) {
+      console.log(`🔄 Gateway mapping (get):`, internalGateways, '->', displayGateways);
+    }
+
     return {
       id: user.id,
       fullName: user.name,
       username: user.username,
       telegramId: user.telegram,
       merchantUrl: user.shopUrl,
-      gateways: user.paymentGateways ? JSON.parse(user.paymentGateways) : null,
+      gateways: displayGateways,
       gatewaySettings: user.gatewaySettings ? JSON.parse(user.gatewaySettings) : null,
       publicKey: user.publicKey,
       wallets: {
@@ -1800,6 +1901,12 @@ export class AdminService {
     const publicKey = 'pk_' + crypto.randomBytes(32).toString('hex');
     const secretKey = 'sk_' + crypto.randomBytes(32).toString('hex');
 
+    // ✅ ДОБАВЛЕНО: Преобразование отображаемых имен gateway'ев в внутренние имена
+    const internalGateways = gateways ? gateways.map(gateway => this.getGatewayInternalName(gateway)) : null;
+    if (gateways && internalGateways) {
+      console.log(`🔄 Gateway mapping (create):`, gateways, '->', internalGateways);
+    }
+
     const newUser = await prisma.shop.create({
       data: {
         name: fullName,
@@ -1807,7 +1914,7 @@ export class AdminService {
         password: hashedPassword,
         telegram: telegramId,
         shopUrl: merchantUrl,
-        paymentGateways: gateways ? JSON.stringify(gateways) : null,
+        paymentGateways: internalGateways ? JSON.stringify(internalGateways) : null,
         gatewaySettings: gatewaySettings ? JSON.stringify(gatewaySettings) : null,
         usdtPolygonWallet: wallets?.usdtPolygonWallet || null,
         usdtTrcWallet: wallets?.usdtTrcWallet || null,

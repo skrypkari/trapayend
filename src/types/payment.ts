@@ -191,6 +191,8 @@ export interface PaymentFilters {
   limit: number;
   status?: string;
   gateway?: string;
-  currency?: string; // ✅ ДОБАВЛЕНО: Фильтр по валюте
-  search?: string; // ✅ ДОБАВЛЕНО: Поиск по различным полям
+  currency?: string; // Фильтр по валюте
+  search?: string; // Поиск по различным полям
+  sortBy?: string; // ✅ НОВОЕ: Поле для сортировки
+  sortOrder?: string; // ✅ НОВОЕ: Направление сортировки (asc/desc)
 }

@@ -3,6 +3,7 @@ import { PlisioService } from './gateways/plisioService';
 import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
+import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
 import { MasterCardService } from './gateways/mastercardService';
 import { telegramBotService } from './telegramBotService';
@@ -14,6 +15,7 @@ export class WebhookService {
   private rapydService: RapydService;
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
+  private coinToPay2Service: CoinToPay2Service;
   private klymeService: KlymeService;
   private masterCardService: MasterCardService;
 
@@ -22,6 +24,7 @@ export class WebhookService {
     this.rapydService = new RapydService();
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
+    this.coinToPay2Service = new CoinToPay2Service();
     this.klymeService = new KlymeService();
     this.masterCardService = new MasterCardService();
   }
@@ -41,7 +44,8 @@ export class WebhookService {
       chargebackAmount?: number;
     }
   ): Promise<void> {
-    console.log(`🔄 Updating payment ${paymentId} status to ${newStatus}`);
+    console.log(`🔄 updatePaymentStatus called: paymentId=${paymentId}, newStatus=${newStatus}`);
+    console.log(`🔄 Additional data:`, additionalData);
 
     await prisma.$transaction(async (tx) => {
       // Получаем текущий платеж с информацией о магазине
@@ -121,32 +125,55 @@ export class WebhookService {
           currentPayment.currency
         );
 
-        // Добавляем к балансу
-        newBalance += amountUSDT;
-        balanceChangeReason = `+${amountUSDT.toFixed(6)} USDT (payment became PAID)`;
+        // Получаем комиссию шлюза для этого магазина
+        const gatewayCommission = await this.getGatewayCommission(shop.id, currentPayment.gateway);
+        
+        // Рассчитываем сумму с учетом комиссии шлюза (сумму, которую получит мерчант)
+        const amountAfterGatewayCommissionUSDT = amountUSDT * (1 - gatewayCommission / 100);
 
-        // Сохраняем amountUSDT в платеже
+        // Добавляем к балансу сумму ПОСЛЕ вычета комиссии
+        newBalance += amountAfterGatewayCommissionUSDT;
+        balanceChangeReason = `+${amountAfterGatewayCommissionUSDT.toFixed(6)} USDT (payment became PAID, after ${gatewayCommission}% gateway commission)`;
+
+        // Сохраняем обе суммы в платеже
         paymentUpdateData.amountUSDT = amountUSDT;
+        paymentUpdateData.amountAfterGatewayCommissionUSDT = amountAfterGatewayCommissionUSDT;
         paymentUpdateData.paidAt = new Date();
 
         console.log(`💰 Converting ${currentPayment.amount} ${currentPayment.currency} -> ${amountUSDT.toFixed(6)} USDT`);
-        console.log(`💰 Adding to balance: ${shop.balance} + ${amountUSDT.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
+        console.log(`💰 Gateway ${currentPayment.gateway} commission: ${gatewayCommission}%`);
+        console.log(`💰 Amount after gateway commission: ${amountAfterGatewayCommissionUSDT.toFixed(6)} USDT`);
+        console.log(`💰 Adding to balance: ${shop.balance} + ${amountAfterGatewayCommissionUSDT.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
       }
 
       // 2. Если платеж был PAID и становится не-PAID
       else if (oldStatus === 'PAID' && newStatus.toUpperCase() !== 'PAID') {
-        const amountUSDT = currentPayment.amountUSDT;
+        // Используем amountAfterGatewayCommissionUSDT если доступна, иначе рассчитываем
+        let amountToRemove: number;
         
-        if (amountUSDT) {
-          // Вычитаем из баланса
-          newBalance -= amountUSDT;
-          balanceChangeReason = `-${amountUSDT.toFixed(6)} USDT (payment no longer PAID)`;
+        if ((currentPayment as any).amountAfterGatewayCommissionUSDT) {
+          // Используем уже рассчитанную сумму с учетом комиссии
+          amountToRemove = (currentPayment as any).amountAfterGatewayCommissionUSDT;
+        } else if (currentPayment.amountUSDT) {
+          // Если новое поле еще не заполнено, рассчитываем комиссию
+          const gatewayCommission = await this.getGatewayCommission(shop.id, currentPayment.gateway);
+          amountToRemove = currentPayment.amountUSDT * (1 - gatewayCommission / 100);
+        } else {
+          console.log('No amountUSDT found for payment, nothing to remove from balance');
+          amountToRemove = 0;
+        }
+        
+        if (amountToRemove > 0) {
+          // Вычитаем из баланса сумму, которую мерчант получил (после комиссии)
+          newBalance -= amountToRemove;
+          balanceChangeReason = `-${amountToRemove.toFixed(6)} USDT (payment no longer PAID)`;
 
-          // Очищаем amountUSDT
+          // Очищаем поля
           paymentUpdateData.amountUSDT = null;
+          paymentUpdateData.amountAfterGatewayCommissionUSDT = null;
           paymentUpdateData.paidAt = null;
 
-          console.log(`💰 Removing from balance: ${shop.balance} - ${amountUSDT.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
+          console.log(`💰 Removing from balance: ${shop.balance} - ${amountToRemove.toFixed(6)} = ${newBalance.toFixed(6)} USDT`);
         }
       }
 
@@ -212,6 +239,58 @@ export class WebhookService {
         { ...currentPayment, ...updatedPayment },
         newStatus.toUpperCase()
       );
+
+      // ✅ ОБНОВЛЕНО: Обновляем счетчик и статус payment link при успешной оплате через webhook
+      if (oldStatus !== 'PAID' && newStatus.toUpperCase() === 'PAID') {
+        console.log(`📈 Payment ${paymentId} became PAID via webhook, updating payment link counter`);
+        console.log(`📈 Payment details: oldStatus="${oldStatus}", newStatus="${newStatus.toUpperCase()}", paymentLinkId="${currentPayment.paymentLinkId}"`);
+        
+        // Простое прямое обновление payment link в той же транзакции
+        if (currentPayment.paymentLinkId) {
+          try {
+            // Получаем текущую payment link
+            const paymentLink = await tx.paymentLink.findUnique({
+              where: { id: currentPayment.paymentLinkId },
+              select: { 
+                id: true, 
+                type: true, 
+                currentPayments: true, 
+                status: true 
+              },
+            });
+
+            if (paymentLink) {
+              console.log(`📈 Found payment link ${paymentLink.id}: type=${paymentLink.type}, currentPayments=${paymentLink.currentPayments}, status=${paymentLink.status}`);
+
+              // Увеличиваем счетчик платежей
+              const newCurrentPayments = paymentLink.currentPayments + 1;
+              
+              // Для SINGLE ссылок устанавливаем статус COMPLETED
+              const newLinkStatus = (paymentLink.type === 'SINGLE') ? 'COMPLETED' : paymentLink.status;
+
+              await tx.paymentLink.update({
+                where: { id: currentPayment.paymentLinkId },
+                data: {
+                  currentPayments: newCurrentPayments,
+                  status: newLinkStatus,
+                  updatedAt: new Date(),
+                },
+              });
+
+              console.log(`✅ Payment link ${paymentLink.id} updated: currentPayments=${paymentLink.currentPayments} -> ${newCurrentPayments}, status=${paymentLink.status} -> ${newLinkStatus}`);
+            } else {
+              console.log(`❌ Payment link ${currentPayment.paymentLinkId} not found`);
+            }
+          } catch (linkError) {
+            console.error('❌ Failed to update payment link counter:', linkError);
+            // Не прерываем транзакцию
+          }
+        } else {
+          console.log(`📈 Payment ${paymentId} is not linked to a payment link`);
+        }
+      } else {
+        console.log(`📈 Payment ${paymentId} status change does not trigger payment link counter update: ${oldStatus} -> ${newStatus.toUpperCase()}`);
+      }
     });
   }
 
@@ -432,6 +511,47 @@ export class WebhookService {
     }
   }
 
+  // Обработка webhook от CoinToPay2
+  async processCoinToPay2Webhook(webhookData: any): Promise<void> {
+    console.log('🔄 Processing CoinToPay2 webhook:', webhookData);
+
+    try {
+      const result = await this.coinToPay2Service.processWebhook(webhookData);
+      
+      if (!result.paymentId) {
+        throw new Error('No payment ID in CoinToPay2 webhook');
+      }
+
+      // Находим платеж по gatewayOrderId
+      const payment = await prisma.payment.findFirst({
+        where: { gatewayOrderId: result.paymentId },
+      });
+
+      if (!payment) {
+        console.error(`Payment not found for CoinToPay2 webhook: ${result.paymentId}`);
+        return;
+      }
+
+      console.log(`📊 CoinToPay2 webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус
+      await this.updatePaymentStatus(payment.id, result.status);
+
+      loggerService.logWebhookProcessed(
+        'cointopay2',
+        payment.id,
+        payment.status,
+        result.status,
+        webhookData
+      );
+
+    } catch (error) {
+      console.error('Error processing CoinToPay2 webhook:', error);
+      loggerService.logWebhookError('cointopay2', error, webhookData);
+      throw error;
+    }
+  }
+
   // Обработка webhook от KLYME
   async processKlymeWebhook(webhookData: any): Promise<void> {
     console.log('🔄 Processing KLYME webhook:', webhookData);
@@ -477,26 +597,70 @@ export class WebhookService {
 
   // Обработка webhook от MasterCard
   async processMasterCardWebhook(webhookData: any): Promise<void> {
-    console.log('🔄 Processing MasterCard webhook:', webhookData);
+    console.log('🔄 Processing MasterCard webhook:', JSON.stringify(webhookData, null, 2));
 
     try {
       const result = await this.masterCardService.processWebhook(webhookData);
       
+      console.log(`📊 MasterCard webhook result:`, result);
+      
       if (!result.paymentId) {
+        console.error('❌ No payment ID extracted from MasterCard webhook data');
+        console.error('❌ Available webhook fields:', Object.keys(webhookData));
         throw new Error('No payment ID in MasterCard webhook');
       }
 
-      // Находим платеж по gatewayOrderId
-      const payment = await prisma.payment.findFirst({
-        where: { gatewayOrderId: result.paymentId },
-      });
+      // ✅ ИСПРАВЛЕНО: Для MasterCard webhook ищем платеж по различным полям
+      // MasterCard может возвращать payment_id (наш gatewayPaymentId) или order_id
+      let payment = null;
+      
+      console.log(`🔍 MasterCard webhook: Searching for payment with ID: ${result.paymentId}`);
+      
+      // Сначала пытаемся найти по gatewayPaymentId (если в webhook пришел payment_id)
+      if (result.paymentId) {
+        console.log(`🔍 Trying to find MasterCard payment by various fields...`);
+        
+        payment = await prisma.payment.findFirst({
+          where: {
+            AND: [
+              { gateway: 'mastercard' },
+              {
+                OR: [
+                  { gatewayPaymentId: result.paymentId },
+                  { gatewayOrderId: result.paymentId },
+                  { id: result.paymentId },
+                  { orderId: result.paymentId },
+                ],
+              },
+            ],
+          },
+        });
+        
+        console.log(`🔍 Search result: ${payment ? `Found payment ${payment.id}` : 'Payment not found'}`);
+      }
 
       if (!payment) {
-        console.error(`Payment not found for MasterCard webhook: ${result.paymentId}`);
+        console.error(`❌ Payment not found for MasterCard webhook with ID: ${result.paymentId}`);
+        console.error(`🔍 Searched by: gatewayOrderId="${result.paymentId}", id="${result.paymentId}", orderId="${result.paymentId}"`);
+        
+        // Попробуем найти все платежи с gateway = 'mastercard' для отладки
+        const allMasterCardPayments = await prisma.payment.findMany({
+          where: { gateway: 'mastercard' },
+          select: { 
+            id: true, 
+            gatewayOrderId: true, 
+            gatewayPaymentId: true, // ✅ ДОБАВЛЕНО: Включаем gatewayPaymentId для отладки
+            orderId: true, 
+            status: true 
+          },
+          take: 10,
+        });
+        console.log(`🔍 Available MasterCard payments for debugging:`, allMasterCardPayments);
+        
         return;
       }
 
-      console.log(`📊 MasterCard webhook: Payment ${payment.id} status ${result.status}`);
+      console.log(`✅ Found payment ${payment.id} for MasterCard webhook, updating status from ${payment.status} to ${result.status}`);
 
       // Обновляем статус
       await this.updatePaymentStatus(payment.id, result.status);
@@ -510,7 +674,7 @@ export class WebhookService {
       );
 
     } catch (error) {
-      console.error('Error processing MasterCard webhook:', error);
+      console.error('❌ Error processing MasterCard webhook:', error);
       loggerService.logWebhookError('mastercard', error, webhookData);
       throw error;
     }
@@ -633,6 +797,38 @@ export class WebhookService {
       await telegramBotService.sendPaymentNotification(payment.shopId, payment, telegramStatus);
     } catch (error) {
       console.error('Failed to send Telegram payment notification:', error);
+    }
+  }
+
+  // Получение комиссии шлюза для конкретного магазина
+  private async getGatewayCommission(shopId: string, gatewayName: string): Promise<number> {
+    try {
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { gatewaySettings: true },
+      });
+
+      if (!shop?.gatewaySettings) {
+        console.log(`No gateway settings found for shop ${shopId}, using default commission 10%`);
+        return 10; // По умолчанию 10%
+      }
+
+      const gatewaySettings = JSON.parse(shop.gatewaySettings);
+      
+      // Ищем настройки шлюза без учета регистра
+      for (const [key, value] of Object.entries(gatewaySettings)) {
+        if (key.toLowerCase() === gatewayName.toLowerCase()) {
+          const commission = (value as any).commission || 10;
+          console.log(`Gateway ${gatewayName} commission for shop ${shopId}: ${commission}%`);
+          return commission;
+        }
+      }
+
+      console.log(`No specific commission found for gateway ${gatewayName} in shop ${shopId}, using default 10%`);
+      return 10; // По умолчанию 10%
+    } catch (error) {
+      console.error(`Error getting gateway commission for shop ${shopId}, gateway ${gatewayName}:`, error);
+      return 10; // По умолчанию 10%
     }
   }
 }

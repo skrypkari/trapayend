@@ -101,7 +101,7 @@ const ALLOWED_SOURCE_CURRENCIES = [
 const ALLOWED_GATEWAY_IDS = Object.keys(GATEWAY_ID_MAP);
 
 // Allowed payment gateways (for admin/internal use)
-const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'KLYME EU', 'KLYME GB', 'KLYME DE', 'MasterCard'];
+const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'CoinToPay2', 'Open Banking 2', 'KLYME EU', 'KLYME GB', 'KLYME DE', 'MasterCard']; // ✅ ДОБАВЛЕНО: Open Banking 2 & CoinToPay2 для обратной совместимости
 
 // Allowed networks for payouts
 const ALLOWED_NETWORKS = ['polygon', 'trc20', 'erc20', 'bsc'];
@@ -178,7 +178,7 @@ export const createUserSchema = Joi.object({
 export const updateUserSchema = Joi.object({
   fullName: Joi.string().min(2).max(100).optional(),
   username: Joi.string().min(3).max(50).optional(),
-  password: Joi.string().min(6).max(100).optional(),
+  password: Joi.string().min(6).max(100).optional().allow(''), // ✅ ОБНОВЛЕНО: Разрешаем пустую строку для пропуска обновления пароля
   telegramId: Joi.string().min(3).max(50).optional().allow(''),
   merchantUrl: Joi.string().uri().optional(),
   gateways: Joi.array().items(Joi.string().valid(...ALLOWED_GATEWAYS)).optional(),

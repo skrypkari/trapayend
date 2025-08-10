@@ -139,15 +139,26 @@ export class ShopController {
         });
       }
 
-      const { page = 1, limit = 20, status, gateway, currency, search } = req.query;
+      const { 
+        page = 1, 
+        limit = 20, 
+        status, 
+        gateway, 
+        currency, 
+        search,
+        sortBy,
+        sortOrder
+      } = req.query;
       
       const result = await this.shopService.getPayments(shopId, {
         page: Number(page),
         limit: Number(limit),
         status: status as string,
         gateway: gateway as string,
-        currency: currency as string, // ✅ ДОБАВЛЕНО: Передаем параметр currency
-        search: search as string, // ✅ ДОБАВЛЕНО: Передаем параметр search
+        currency: currency as string,
+        search: search as string,
+        sortBy: sortBy as string, // ✅ НОВОЕ: Поддержка сортировки
+        sortOrder: sortOrder as string, // ✅ НОВОЕ: Поддержка направления сортировки
       });
       
       res.json({

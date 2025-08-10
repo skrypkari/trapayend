@@ -13,6 +13,7 @@ import { PlisioService } from './gateways/plisioService';
 import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
+import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
@@ -23,6 +24,7 @@ export class PaymentLinkService {
   private rapydService: RapydService;
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
+  private coinToPay2Service: CoinToPay2Service;
   private klymeService: KlymeService;
 
   constructor() {
@@ -30,6 +32,7 @@ export class PaymentLinkService {
     this.rapydService = new RapydService();
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
+    this.coinToPay2Service = new CoinToPay2Service();
     this.klymeService = new KlymeService();
   }
 
@@ -81,7 +84,7 @@ export class PaymentLinkService {
     let finalPendingUrl: string;
 
     // Для KLYME, CoinToPay и Noda используем pending URL как success URL
-    if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
+    if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay' || gatewayName === 'cointopay2') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
       finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     } else {
@@ -94,8 +97,10 @@ export class PaymentLinkService {
     // ✅ НОВОЕ: Генерируем whiteUrl для всех шлюзов кроме Plisio и KLYME
     let whiteUrl: string | null = null;
     if (gatewayName !== 'plisio' && !gatewayName.startsWith('klyme_')) {
-      whiteUrl = `https://tesoft.uk/gateway/payment.php?id=${paymentId}`;
-      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl}`);
+      // ✅ ИСПРАВЛЕНО: Для cointopay2 (шлюз 0101) используем traffer.uk
+      const domain = gatewayName === 'cointopay2' ? 'traffer.uk' : 'tesoft.uk';
+      whiteUrl = `https://${domain}/gateway/payment.php?id=${paymentId}`;
+      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl} (domain: ${domain})`);
     } else {
       console.log(`🔗 No whiteUrl for ${gatewayName} (Plisio or KLYME)`);
     }
@@ -245,8 +250,11 @@ export class PaymentLinkService {
     
     if (shop.paymentGateways) {
       try {
-        enabledGateways = JSON.parse(shop.paymentGateways);
-        console.log(`🔐 Shop ${shop.username} enabled gateways:`, enabledGateways);
+        const internalGateways = JSON.parse(shop.paymentGateways);
+        // ✅ ИСПРАВЛЕНО: Преобразуем внутренние имена в отображаемые имена для корректной проверки
+        enabledGateways = internalGateways.map((gateway: string) => this.getGatewayDisplayName(gateway));
+        console.log(`🔐 Shop ${shop.username} enabled gateways (internal):`, internalGateways);
+        console.log(`🔐 Shop ${shop.username} enabled gateways (display):`, enabledGateways);
       } catch (error) {
         console.error('Error parsing payment gateways:', error);
         enabledGateways = ['Plisio'];
@@ -281,6 +289,7 @@ export class PaymentLinkService {
       'rapyd': 'Rapyd',
       'noda': 'Noda',
       'cointopay': 'CoinToPay',
+      'cointopay2': 'Open Banking 2',
       'klyme_eu': 'KLYME EU',
       'klyme_gb': 'KLYME GB',
       'klyme_de': 'KLYME DE',
@@ -324,9 +333,9 @@ export class PaymentLinkService {
     }
 
     let finalCurrency = linkData.currency || 'USD';
-    if (gatewayName === 'cointopay') {
+    if (gatewayName === 'cointopay' || gatewayName === 'cointopay2') {
       finalCurrency = 'EUR';
-      console.log(`🪙 Using EUR as currency for CoinToPay payment link`);
+      console.log(`🪙 Using EUR as currency for ${gatewayName} payment link`);
     }
 
     this.validateKlymeCurrency(gatewayName, finalCurrency);
@@ -510,9 +519,9 @@ export class PaymentLinkService {
       }
     }
 
-    if (updatePayload.gateway === 'cointopay') {
+    if (updatePayload.gateway === 'cointopay' || updatePayload.gateway === 'cointopay2') {
       updatePayload.currency = 'EUR';
-      console.log(`🪙 Forcing EUR as currency for CoinToPay payment link update`);
+      console.log(`🪙 Forcing EUR as currency for ${updatePayload.gateway} payment link update`);
     }
 
     if (updatePayload.gateway && updatePayload.currency) {
@@ -598,6 +607,22 @@ export class PaymentLinkService {
       ? (link.currentPayments >= 1 ? 0 : 1)
       : Number.MAX_SAFE_INTEGER; // Для MULTI ссылок нет лимита
 
+    // ✅ ИСПРАВЛЕНО: Возвращаем вычисленный статус, а не статус из базы данных
+    let effectiveStatus = link.status;
+    if (isCompleted) {
+      effectiveStatus = 'COMPLETED';
+    } else if (isExpired) {
+      effectiveStatus = 'EXPIRED';
+    }
+
+    console.log(`🔗 Public link ${linkId} status calculation:`);
+    console.log(`   - Database status: ${link.status}`);
+    console.log(`   - Type: ${link.type}`);
+    console.log(`   - Current payments: ${link.currentPayments}`);
+    console.log(`   - Is completed: ${isCompleted}`);
+    console.log(`   - Is expired: ${isExpired}`);
+    console.log(`   - Effective status: ${effectiveStatus}`);
+
     return {
       id: link.id,
       amount: link.amount,
@@ -607,7 +632,7 @@ export class PaymentLinkService {
       // ✅ ИЗМЕНЕНО: Возвращаем type вместо maxPayments
       type: link.type,
       currentPayments: link.currentPayments,
-      status: link.status,
+      status: effectiveStatus, // ✅ ИСПРАВЛЕНО: Возвращаем вычисленный статус
       expiresAt: link.expiresAt || undefined,
       shopName: link.shop.name,
       isAvailable,
@@ -896,6 +921,42 @@ export class PaymentLinkService {
           expiresAt: payment.expiresAt || undefined,
         };
 
+      } else if (link.gateway === 'cointopay2') {
+        console.log(`🪙 Creating CoinToPay2 (Open Banking 2) payment from link with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${paymentAmount} EUR (always EUR for CoinToPay2)`);
+
+        const coinToPay2Result = await this.coinToPay2Service.createPaymentLink({
+          paymentId: payment.id,
+          orderId: gatewayOrderId,
+          amount: paymentAmount,
+        });
+
+        gatewayPaymentId = coinToPay2Result.gateway_payment_id;
+        externalPaymentUrl = coinToPay2Result.payment_url;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+          },
+        });
+
+        if (gatewayPaymentId) {
+          console.log(`🪙 Scheduling individual status checks for CoinToPay2 payment: ${payment.id} (${gatewayPaymentId})`);
+          coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
+        }
+
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        console.log(`🔗 CoinToPay2 (Open Banking 2) payment URL: ${paymentUrl}`);
+
+        return {
+          paymentId: payment.id,
+          paymentUrl: paymentUrl,
+          expiresAt: payment.expiresAt || undefined,
+        };
+
       } else if (link.gateway.startsWith('klyme_')) {
         const region = getKlymeRegionFromGatewayName(link.gateway);
         
@@ -969,7 +1030,16 @@ export class PaymentLinkService {
 
         // For MasterCard, we need card data from the client
         // Since payment links don't have card data, we create a form URL for card input
-        const masterCardFormUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ДОБАВЛЕНО: Включаем email и имя в URL параметры для MasterCard
+        const urlParams = new URLSearchParams();
+        if (customerEmail) {
+          urlParams.append('email', customerEmail);
+        }
+        if (customerName) {
+          urlParams.append('name', customerName);
+        }
+        
+        const masterCardFormUrl = `https://app.trapay.uk/payment/${payment.id}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
         
         await prisma.payment.update({
           where: { id: payment.id },
@@ -981,9 +1051,10 @@ export class PaymentLinkService {
         });
 
         // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
         console.log(`🔗 MasterCard payment URL: ${paymentUrl}`);
         console.log(`💳 MasterCard form URL: ${masterCardFormUrl}`);
+        console.log(`📧 URL параметры:`, urlParams.toString());
 
         return {
           paymentId: payment.id,
@@ -1006,7 +1077,7 @@ export class PaymentLinkService {
   }
 
   async handleSuccessfulPayment(paymentId: string): Promise<void> {
-    console.log(`📈 Processing successful payment for payment link counter: ${paymentId}`);
+    console.log(`📈 handleSuccessfulPayment called for payment: ${paymentId}`);
 
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -1014,6 +1085,19 @@ export class PaymentLinkService {
         paymentLink: true,
       },
     });
+
+    console.log(`📈 Payment found:`, payment ? {
+      id: payment.id,
+      status: payment.status,
+      paidAt: payment.paidAt,
+      paymentLinkId: payment.paymentLinkId,
+      paymentLink: payment.paymentLink ? {
+        id: payment.paymentLink.id,
+        type: payment.paymentLink.type,
+        currentPayments: payment.paymentLink.currentPayments,
+        status: payment.paymentLink.status,
+      } : null,
+    } : 'Payment not found');
 
     if (!payment || !payment.paymentLink) {
       console.log(`📈 Payment ${paymentId} is not linked to a payment link, skipping counter update`);
@@ -1029,6 +1113,8 @@ export class PaymentLinkService {
       console.log(`📈 Payment ${paymentId} has no paidAt timestamp, might not be properly paid. Skipping counter update.`);
       return;
     }
+
+    console.log(`📈 All conditions met for payment ${paymentId}, proceeding with payment link counter update`);
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -1046,6 +1132,8 @@ export class PaymentLinkService {
           throw new Error(`Payment link ${payment.paymentLinkId} not found`);
         }
 
+        console.log(`📈 Current payment link state:`, currentLink);
+
         // ✅ ИЗМЕНЕНО: Для SINGLE ссылок проверяем, не превышен ли лимит в 1 платеж
         if (currentLink.type === 'SINGLE' && currentLink.currentPayments >= 1) {
           console.log(`📈 Single payment link ${payment.paymentLinkId} already used (${currentLink.currentPayments} payments), skipping increment`);
@@ -1061,12 +1149,19 @@ export class PaymentLinkService {
           },
         });
 
+        console.log(`📈 Existing successful payments for link ${payment.paymentLinkId}: ${existingSuccessfulPayments}`);
+
         const expectedCurrentPayments = existingSuccessfulPayments + 1;
 
         // ✅ ИЗМЕНЕНО: Для SINGLE ссылок автоматически помечаем как COMPLETED после первой оплаты
         const newStatus = currentLink.type === 'SINGLE' && expectedCurrentPayments >= 1 
           ? 'COMPLETED' 
           : currentLink.status;
+
+        console.log(`📈 Updating payment link ${payment.paymentLinkId}:`);
+        console.log(`   - Type: ${currentLink.type}`);
+        console.log(`   - Current payments: ${currentLink.currentPayments} -> ${expectedCurrentPayments}`);
+        console.log(`   - Status: ${currentLink.status} -> ${newStatus}`);
 
         const updatedLink = await tx.paymentLink.update({
           where: { id: payment.paymentLinkId! },
@@ -1088,6 +1183,7 @@ export class PaymentLinkService {
 
     } catch (error) {
       console.error(`❌ Failed to update payment link counter for payment ${paymentId}:`, error);
+      throw error; // ✅ НОВОЕ: Выбрасываем ошибку для отладки
     }
   }
 

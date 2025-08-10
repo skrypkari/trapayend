@@ -161,6 +161,35 @@ export class WebhookController {
     }
   };
 
+  // CoinToPay2 webhook handler
+  handleCoinToPay2Webhook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      console.log('Received CoinToPay2 webhook:', req.body);
+      
+      // Log incoming webhook with headers
+      loggerService.logWebhookReceived('cointopay2', req.body, req.headers);
+      
+      const result = await this.webhookService.processCoinToPay2Webhook(req.body);
+      
+      // CoinToPay2 expects 200 OK response
+      res.status(200).json({
+        success: true,
+        message: 'CoinToPay2 webhook processed successfully',
+      });
+    } catch (error) {
+      console.error('CoinToPay2 webhook processing error:', error);
+      
+      // Log webhook processing error
+      loggerService.logWebhookError('cointopay2', error, req.body);
+      
+      // Still return 200 to prevent CoinToPay2 from retrying
+      res.status(200).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'CoinToPay2 webhook processing failed',
+      });
+    }
+  };
+
   // KLYME webhook handler
   handleKlymeWebhook = async (req: Request, res: Response, next: NextFunction) => {
     try {

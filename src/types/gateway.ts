@@ -4,6 +4,7 @@ export const GATEWAY_ID_MAP: Record<string, string> = {
   '0001': 'plisio',
   '0010': 'rapyd', 
   '0100': 'cointopay',
+  '0101': 'cointopay2', // ✅ НОВОЕ: Open Banking 2 (EU) + SEPA
   '1000': 'noda',
   '1001': 'klyme_eu',
   '1010': 'klyme_gb',
@@ -17,6 +18,7 @@ export const GATEWAY_NAME_MAP: Record<string, string> = {
   'plisio': '0001',
   'rapyd': '0010',
   'cointopay': '0100', 
+  'cointopay2': '0101', // ✅ НОВОЕ: Open Banking 2 (EU) + SEPA
   'noda': '1000',
   'klyme_eu': '1001',
   'klyme_gb': '1010',
@@ -60,6 +62,12 @@ export const AVAILABLE_GATEWAYS: GatewayInfo[] = [
     id: '0100',
     name: 'cointopay', 
     displayName: 'CoinToPay',
+    isActive: true,
+  },
+  {
+    id: '0101', // ✅ НОВОЕ: Open Banking 2 (EU) + SEPA
+    name: 'cointopay2',
+    displayName: 'CoinToPay2',
     isActive: true,
   },
   {
@@ -139,6 +147,17 @@ export const GATEWAY_INFO: Record<string, GatewayInfo> = {
     description: 'Digital payment solutions - ID: 0100',
     features: ['EUR', 'SEPA'],
     color: 'bg-green-500',
+    fee: '10%',
+    payout: 'T+5',
+    isActive: true,
+  },
+  '0101': { // ✅ НОВОЕ: CoinToPay 2 (EU) + SEPA на traffer.uk
+    id: '0101',
+    name: 'CoinToPay2',
+    displayName: '0101 - Open Banking 2 (EU) + SEPA',
+    description: 'Enhanced digital payment solutions - ID: 0101',
+    features: ['EUR', 'SEPA'],
+    color: 'bg-teal-500',
     fee: '10%',
     payout: 'T+5',
     isActive: true,

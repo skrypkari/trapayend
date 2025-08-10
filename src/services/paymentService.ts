@@ -4,6 +4,7 @@ import { PlisioService } from './gateways/plisioService';
 import { RapydService } from './gateways/rapydService';
 import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
+import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
 import { TestGatewayService } from './gateways/testGatewayService';
 import { MasterCardService } from './gateways/mastercardService';
@@ -17,6 +18,7 @@ export class PaymentService {
   private rapydService: RapydService;
   private nodaService: NodaService;
   private coinToPayService: CoinToPayService;
+  private coinToPay2Service: CoinToPay2Service;
   private klymeService: KlymeService;
   private testGatewayService: TestGatewayService;
   private masterCardService: MasterCardService;
@@ -26,6 +28,7 @@ export class PaymentService {
     this.rapydService = new RapydService();
     this.nodaService = new NodaService();
     this.coinToPayService = new CoinToPayService();
+    this.coinToPay2Service = new CoinToPay2Service();
     this.klymeService = new KlymeService();
     this.testGatewayService = new TestGatewayService();
     this.masterCardService = new MasterCardService();
@@ -105,7 +108,7 @@ export class PaymentService {
     let finalPendingUrl: string;
 
     // Для KLYME, CoinToPay и Noda используем pending URL как success URL
-    if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay') {
+    if (gatewayName === 'noda' || gatewayName.startsWith('klyme_') || gatewayName === 'cointopay' || gatewayName === 'cointopay2') {
       finalSuccessUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
       finalPendingUrl = `${baseUrl}/gateway/pending.php?id=${paymentId}`;
     } else {
@@ -118,8 +121,10 @@ export class PaymentService {
     // ✅ НОВОЕ: Генерируем whiteUrl для всех шлюзов кроме Plisio и KLYME
     let whiteUrl: string | null = null;
     if (gatewayName !== 'plisio' && !gatewayName.startsWith('klyme_')) {
-      whiteUrl = `https://tesoft.uk/gateway/payment.php?id=${paymentId}`;
-      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl}`);
+      // ✅ ИСПРАВЛЕНО: Для cointopay2 (шлюз 0101) используем traffer.uk
+      const domain = gatewayName === 'cointopay2' ? 'traffer.uk' : 'tesoft.uk';
+      whiteUrl = `https://${domain}/gateway/payment.php?id=${paymentId}`;
+      console.log(`🔗 Generated whiteUrl for ${gatewayName}: ${whiteUrl} (domain: ${domain})`);
     } else {
       console.log(`🔗 No whiteUrl for ${gatewayName} (Plisio or KLYME)`);
     }
@@ -305,6 +310,7 @@ export class PaymentService {
       'rapyd': 'Rapyd',
       'noda': 'Noda',
       'cointopay': 'CoinToPay',
+      'cointopay2': 'CoinToPay2',
       'klyme_eu': 'KLYME EU',
       'klyme_gb': 'KLYME GB',
       'klyme_de': 'KLYME DE',
@@ -625,6 +631,44 @@ export class PaymentService {
           status: payment.status,
         };
 
+      } else if (gatewayName === 'cointopay2') {
+        console.log(`🪙 Creating CoinToPay2 payment with gateway order_id: ${gatewayOrderId} (8digits-8digits format)`);
+        console.log(`💰 Amount: ${amount} EUR (always EUR for CoinToPay2)`);
+
+        const coinToPay2Result = await this.coinToPay2Service.createPaymentLink({
+          paymentId: payment.id,
+          orderId: gatewayOrderId,
+          amount,
+        });
+
+        gatewayPaymentId = coinToPay2Result.gateway_payment_id;
+        externalPaymentUrl = coinToPay2Result.payment_url;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            currency: 'EUR',
+          },
+        });
+
+        if (gatewayPaymentId) {
+          console.log(`🪙 Scheduling individual status checks for CoinToPay2 payment: ${payment.id} (${gatewayPaymentId})`);
+          coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
+        }
+
+        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        console.log(`🔗 CoinToPay2 payment URL: ${paymentUrl}`);
+
+        return {
+          id: payment.id,
+          gateway_payment_id: gatewayPaymentId,
+          payment_url: paymentUrl,
+          status: payment.status,
+        };
+
       } else if (gatewayName.startsWith('klyme_')) {
         const region = getKlymeRegionFromGatewayName(gatewayName);
         
@@ -700,7 +744,16 @@ export class PaymentService {
 
         // ✅ ОБНОВЛЕНО: Для MasterCard создаем платеж в PENDING статусе
         // Данные карты будут обработаны позже через отдельный эндпоинт
-        const masterCardFormUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        // ✅ ДОБАВЛЕНО: Включаем email и имя в URL параметры для MasterCard
+        const urlParams = new URLSearchParams();
+        if (customer_email) {
+          urlParams.append('email', customer_email);
+        }
+        if (customer_name) {
+          urlParams.append('name', customer_name);
+        }
+        
+        const masterCardFormUrl = `https://app.trapay.uk/payment/${payment.id}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
         
         gatewayPaymentId = `mc_${gatewayOrderId}`;
         externalPaymentUrl = masterCardFormUrl;
@@ -715,10 +768,11 @@ export class PaymentService {
         });
 
         // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
 
         console.log(`🔗 MasterCard payment URL: ${paymentUrl}`);
         console.log(`💳 MasterCard form URL: ${masterCardFormUrl}`);
+        console.log(`📧 URL параметры:`, urlParams.toString());
         console.log(`📝 Note: Card data will be processed via separate endpoint`);
 
         return {
@@ -1081,7 +1135,7 @@ export class PaymentService {
       totalPages: number;
     };
   }> {
-    const { page, limit, status, gateway, currency, search } = filters;
+    const { page, limit, status, gateway, currency, search, sortBy, sortOrder } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = { shopId };
@@ -1101,16 +1155,16 @@ export class PaymentService {
       }
     }
 
-    // ✅ ДОБАВЛЕНО: Фильтр по валюте
+    // Фильтр по валюте
     if (currency) {
       where.currency = currency.toUpperCase();
       console.log(`💱 Currency filter applied in shop payments: ${currency.toUpperCase()}`);
     }
 
-    // ✅ ДОБАВЛЕНО: Поиск по различным полям
+    // Поиск по различным полям
     if (search) {
       where.OR = [
-        { id: { contains: search, mode: 'insensitive' } }, // ✅ Поиск по ID платежа
+        { id: { contains: search, mode: 'insensitive' } }, // Поиск по ID платежа
         { orderId: { contains: search, mode: 'insensitive' } },
         { gatewayOrderId: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
@@ -1119,12 +1173,27 @@ export class PaymentService {
       console.log(`🔍 Search applied in shop payments: ${search}`);
     }
 
+    // ✅ НОВОЕ: Настройка сортировки
+    let orderBy: any = { createdAt: 'desc' }; // По умолчанию сортируем по дате создания
+
+    if (sortBy) {
+      const validSortFields = ['amount', 'createdAt', 'updatedAt', 'status', 'gateway', 'currency'];
+      const validSortOrders = ['asc', 'desc'];
+      
+      if (validSortFields.includes(sortBy)) {
+        const order = (sortOrder && validSortOrders.includes(sortOrder)) ? sortOrder : 'desc';
+        orderBy = { [sortBy]: order };
+        
+        console.log(`📊 Sorting shop payments by ${sortBy} in ${order} order`);
+      }
+    }
+
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: orderBy, // ✅ ОБНОВЛЕНО: Используем динамическую сортировку
         select: {
           id: true,
           gateway: true,

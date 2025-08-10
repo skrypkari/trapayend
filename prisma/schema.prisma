@@ -162,6 +162,7 @@ model Payment {
   sourceCurrency      String?       @map("source_currency") // New field
   // ✅ НОВОЕ: Сумма платежа в USDT (конвертируется при статусе PAID)
   amountUSDT          Float?        @map("amount_usdt") // Сумма в USDT на момент оплаты
+  amountAfterGatewayCommissionUSDT Float? @map("amount_after_gateway_commission_usdt") // Сумма в USDT с учетом комиссии шлюза
   usage               PaymentUsage  @default(ONCE)
   expiresAt           DateTime?     @map("expires_at")
   // ✅ НОВОЕ: Три типа URL для payments

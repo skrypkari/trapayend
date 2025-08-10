@@ -29,6 +29,8 @@ router.post('/gateway/noda', webhookController.handleNodaWebhook);
 
 router.post('/gateway/cointopay', webhookController.handleCoinToPayWebhook);
 
+router.post('/gateway/cointopay2', webhookController.handleCoinToPay2Webhook);
+
 // KLYME webhook endpoints
 router.post('/gateway/klyme', webhookController.handleKlymeWebhook);
 
@@ -40,6 +42,7 @@ router.post('/gateways/plisio/webhook', upload.none(), webhookController.handleP
 router.post('/gateways/rapyd/webhook', webhookController.handleRapydWebhook);
 router.post('/gateways/noda/webhook', webhookController.handleNodaWebhook);
 router.post('/gateways/cointopay/webhook', webhookController.handleCoinToPayWebhook);
+router.post('/gateways/cointopay2/webhook', webhookController.handleCoinToPay2Webhook);
 router.post('/gateways/klyme/webhook', webhookController.handleKlymeWebhook);
 router.post('/gateways/mastercard/webhook', webhookController.handleMasterCardWebhook);
 

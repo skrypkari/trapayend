@@ -1,10 +1,14 @@
 import { CoinToPayService } from './gateways/coinToPayService';
+import { CoinToPay2Service } from './gateways/coinToPay2Service';
+import { getGatewayIdByName } from '../types/gateway';
 import prisma from '../config/database';
 import { telegramBotService } from './telegramBotService';
 import { loggerService } from './loggerService';
+import { currencyService } from './currencyService';
 
 export class CoinToPayStatusService {
   private coinToPayService: CoinToPayService;
+  private coinToPay2Service: CoinToPay2Service;
   private globalCheckInterval: NodeJS.Timeout | null = null;
   private readonly GLOBAL_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 час для глобальной проверки
   private readonly EXPIRY_DAYS = 5; // 5 дней до автоматического истечения
@@ -19,7 +23,8 @@ export class CoinToPayStatusService {
 
   constructor() {
     this.coinToPayService = new CoinToPayService();
-    console.log('🪙 CoinToPayStatusService initialized');
+    this.coinToPay2Service = new CoinToPay2Service();
+    console.log('🪙 CoinToPayStatusService initialized with support for both CoinToPay and CoinToPay2');
   }
 
   // ✅ ДОБАВЛЕНО: Метод для создания индивидуального расписания проверок для платежа
@@ -229,8 +234,8 @@ export class CoinToPayStatusService {
     console.log(`   - Amount: ${payment.amount} ${payment.currency}`);
     console.log(`   - ShopId: ${payment.shopId}`);
 
-    if (payment.gateway !== 'cointopay') {
-      console.log(`⚠️ [CHECK] Payment ${paymentId} is not a CoinToPay payment (gateway: ${payment.gateway})`);
+    if (payment.gateway !== 'cointopay' && payment.gateway !== 'cointopay2') {
+      console.log(`⚠️ [CHECK] Payment ${paymentId} is not a CoinToPay/CoinToPay2 payment (gateway: ${payment.gateway})`);
       return;
     }
 
@@ -366,7 +371,7 @@ export class CoinToPayStatusService {
       // Get all pending CoinToPay payments
       const pendingPayments = await prisma.payment.findMany({
         where: {
-          gateway: 'cointopay',
+          gateway: { in: ['cointopay', 'cointopay2'] }, // ✅ ДОБАВЛЕНО: Поддержка обоих gateway
           status: 'PENDING',
           gatewayPaymentId: { not: null },
         },
@@ -567,13 +572,18 @@ export class CoinToPayStatusService {
       return;
     }
 
-    console.log(`🔍 [CHECK] Checking CoinToPay payment ${payment.id} (${payment.gatewayPaymentId})`);
+    console.log(`🔍 [CHECK] Checking ${payment.gateway} payment ${payment.id} (${payment.gatewayPaymentId})`);
 
     try {
-      // Check payment status
-      const statusResult = await this.coinToPayService.checkPaymentStatus(payment.gatewayPaymentId);
-
-      console.log(`📊 [CHECK] Payment ${payment.id} status: ${statusResult.status}`);
+      // Choose the appropriate service based on gateway
+      let statusResult: any;
+      if (payment.gateway === 'cointopay2') {
+        statusResult = await this.coinToPay2Service.checkPaymentStatus(payment.gatewayPaymentId);
+        console.log(`📊 [CHECK] CoinToPay2 payment ${payment.id} status: ${statusResult.status}`);
+      } else {
+        statusResult = await this.coinToPayService.checkPaymentStatus(payment.gatewayPaymentId);
+        console.log(`📊 [CHECK] CoinToPay payment ${payment.id} status: ${statusResult.status}`);
+      }
 
       // Log specific status details
       if (statusResult.paymentDetails) {
@@ -611,9 +621,26 @@ export class CoinToPayStatusService {
           updatedAt: new Date(),
         };
 
-        // If payment became successful, set paid_at
+        // If payment became successful, set paid_at and calculate amounts
         if (statusResult.status === 'PAID' && payment.status !== 'PAID') {
           updateData.paidAt = new Date();
+          
+          // Convert amount to USDT if not already done
+          if (!payment.amountUSDT) {
+            const amountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
+            updateData.amountUSDT = amountUSDT;
+            
+            // Calculate amount after gateway commission
+            const gatewayCommission = await this.getGatewayCommission(payment.shopId, payment.gateway);
+            const amountAfterGatewayCommissionUSDT = amountUSDT * (1 - gatewayCommission / 100);
+            updateData.amountAfterGatewayCommissionUSDT = amountAfterGatewayCommissionUSDT;
+            
+            console.log(`💰 [CHECK] Payment ${payment.id} amounts calculated:`);
+            console.log(`   Amount: ${payment.amount} ${payment.currency} -> ${amountUSDT.toFixed(6)} USDT`);
+            console.log(`   Gateway ${payment.gateway} commission: ${gatewayCommission}%`);
+            console.log(`   Amount after commission: ${amountAfterGatewayCommissionUSDT.toFixed(6)} USDT`);
+          }
+          
           console.log(`💰 [CHECK] Payment ${payment.id} marked as paid at: ${updateData.paidAt.toISOString()}`);
         }
 
@@ -648,6 +675,56 @@ export class CoinToPayStatusService {
           where: { id: payment.id },
           data: updateData,
         });
+
+        // ✅ ДОБАВЛЕНО: Обновляем payment link при успешной оплате CoinToPay
+        if (statusResult.status === 'PAID' && payment.status !== 'PAID') {
+          console.log(`📈 [COINTOPAY] Payment ${payment.id} became PAID via status check, updating payment link`);
+          
+          // Получаем payment link для этого платежа
+          const paymentWithLink = await prisma.payment.findUnique({
+            where: { id: payment.id },
+            select: { 
+              id: true, 
+              paymentLinkId: true,
+              paymentLink: {
+                select: {
+                  id: true,
+                  type: true,
+                  currentPayments: true,
+                  status: true,
+                }
+              }
+            },
+          });
+
+          if (paymentWithLink?.paymentLinkId && paymentWithLink.paymentLink) {
+            try {
+              const link = paymentWithLink.paymentLink;
+              console.log(`📈 [COINTOPAY] Found payment link ${link.id}: type=${link.type}, currentPayments=${link.currentPayments}, status=${link.status}`);
+
+              // Увеличиваем счетчик платежей
+              const newCurrentPayments = link.currentPayments + 1;
+              
+              // Для SINGLE ссылок устанавливаем статус COMPLETED
+              const newLinkStatus = (link.type === 'SINGLE') ? 'COMPLETED' : link.status;
+
+              await prisma.paymentLink.update({
+                where: { id: link.id },
+                data: {
+                  currentPayments: newCurrentPayments,
+                  status: newLinkStatus,
+                  updatedAt: new Date(),
+                },
+              });
+
+              console.log(`✅ [COINTOPAY] Payment link ${link.id} updated: currentPayments=${link.currentPayments} -> ${newCurrentPayments}, status=${link.status} -> ${newLinkStatus}`);
+            } catch (linkError) {
+              console.error('❌ [COINTOPAY] Failed to update payment link:', linkError);
+            }
+          } else {
+            console.log(`📈 [COINTOPAY] Payment ${payment.id} is not linked to a payment link`);
+          }
+        }
 
         // Log status change
         await prisma.webhookLog.create({
@@ -757,13 +834,14 @@ export class CoinToPayStatusService {
       }
 
       // Prepare webhook payload for shop
+      const gatewayId = getGatewayIdByName(payment.gateway) || payment.gateway;
       const webhookPayload = {
         event: eventName,
         payment: {
           id: payment.id,
           order_id: payment.orderId,
           gateway_order_id: payment.gatewayOrderId,
-          gateway: '0100', // CoinToPay gateway ID
+          gateway: gatewayId, // ✅ ОБНОВЛЕНО: Динамически определяем gateway ID (0100 для cointopay, 0101 для cointopay2)
           amount: payment.amount,
           currency: payment.currency,
           status: status.toLowerCase(),
@@ -858,11 +936,11 @@ export class CoinToPayStatusService {
       throw new Error('Payment not found');
     }
 
-    if (payment.gateway !== 'cointopay') {
-      throw new Error('Payment is not a CoinToPay payment');
+    if (payment.gateway !== 'cointopay' && payment.gateway !== 'cointopay2') {
+      throw new Error('Payment is not a CoinToPay/CoinToPay2 payment');
     }
 
-    console.log(`✅ [MANUAL] Starting manual check for CoinToPay payment ${paymentId}`);
+    console.log(`✅ [MANUAL] Starting manual check for ${payment.gateway} payment ${paymentId}`);
     await this.checkSinglePayment(payment);
     console.log(`✅ [MANUAL] Manual check completed for payment ${paymentId}`);
   }
@@ -920,6 +998,38 @@ export class CoinToPayStatusService {
     }
     
     return { hasTimers: false };
+  }
+
+  // ✅ НОВОЕ: Получение комиссии шлюза для конкретного магазина
+  private async getGatewayCommission(shopId: string, gatewayName: string): Promise<number> {
+    try {
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { gatewaySettings: true },
+      });
+
+      if (!shop?.gatewaySettings) {
+        console.log(`No gateway settings found for shop ${shopId}, using default commission 10%`);
+        return 10; // По умолчанию 10%
+      }
+
+      const gatewaySettings = JSON.parse(shop.gatewaySettings);
+      
+      // Ищем настройки шлюза без учета регистра
+      for (const [key, value] of Object.entries(gatewaySettings)) {
+        if (key.toLowerCase() === gatewayName.toLowerCase()) {
+          const commission = (value as any).commission || 10;
+          console.log(`Gateway ${gatewayName} commission for shop ${shopId}: ${commission}%`);
+          return commission;
+        }
+      }
+
+      console.log(`No specific commission found for gateway ${gatewayName} in shop ${shopId}, using default 10%`);
+      return 10; // По умолчанию 10%
+    } catch (error) {
+      console.error(`Error getting gateway commission for shop ${shopId}, gateway ${gatewayName}:`, error);
+      return 10; // По умолчанию 10%
+    }
   }
 }
 

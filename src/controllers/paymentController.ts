@@ -124,7 +124,6 @@ export class PaymentController {
         customerEmail: cardHolder.email,
         customerIp: browser.ip,
         customerUa: browser.user_agent,
-        customerCountry: cardHolder.country || null, // Опционально
       };
 
       // Find payment
@@ -214,15 +213,27 @@ export class PaymentController {
         statusChangedAt: new Date(),
       };
 
+      // ✅ ИСПРАВЛЕНО: Сохраняем gatewayPaymentId всегда, когда он приходит от шлюза
+      if (result.gateway_payment_id) {
+        updateData.gatewayPaymentId = result.gateway_payment_id;
+        console.log(`💳 Saving MasterCard gateway payment ID: ${result.gateway_payment_id}`);
+      }
+
       if (result.status === 'PAID') {
         updateData.paidAt = new Date();
-        updateData.gatewayPaymentId = result.gateway_payment_id;
       } else if (result.status === 'FAILED') {
         updateData.failureMessage = 'Card payment failed';
       }
 
       // Save payment method
       updateData.paymentMethod = 'mastercard';
+
+      // ✅ НОВОЕ: Сохраняем последние 4 цифры карты
+      if (cardData.number) {
+        const cardNumber = cardData.number.replace(/[\s-]/g, ''); // Убираем пробелы и дефисы
+        updateData.cardLast4 = cardNumber.slice(-4); // Берем последние 4 цифры
+        console.log(`💳 Saving card last 4 digits: ****${updateData.cardLast4}`);
+      }
 
       await prisma.payment.update({
         where: { id: payment.id },

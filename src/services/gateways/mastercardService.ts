@@ -73,7 +73,7 @@ export class MasterCardService {
 
   constructor() {
     this.apiUrl = 'https://api.paydmeth.com/api';
-    this.merchantPointId = 1660;
+    this.merchantPointId = 1703;
     this.privateKeyPath = path.join(process.cwd(), 'keys', 'private.pem');
     this.publicKeyPath = path.join(process.cwd(), 'keys', 'psp_public.pem');
     
@@ -529,12 +529,19 @@ export class MasterCardService {
       // Определяем статус
       let status: 'PENDING' | 'PAID' | 'FAILED' = 'PENDING';
       
-      if (decryptedResult.status === 1 && decryptedResult.final === 1) {
+      // MasterCard status mapping based on official documentation
+      if (decryptedResult.status === 100 && decryptedResult.final === 1) {
+        // Status 100: Operation completed successfully
         status = 'PAID';
-      } else if (decryptedResult.status === 0 && decryptedResult.final === 0) {
+      } else if (decryptedResult.final === 0) {
+        // All non-final statuses are pending (payment in progress)
         status = 'PENDING';
-      } else {
+      } else if (decryptedResult.final === 1 && decryptedResult.status !== 100) {
+        // All final statuses except 100 are failed
         status = 'FAILED';
+      } else {
+        // Default fallback
+        status = 'PENDING';
       }
 
       return {
@@ -786,23 +793,75 @@ export class MasterCardService {
     amount?: number;
     currency?: string;
   }> {
-    console.log('Processing MasterCard webhook:', webhookData);
+    console.log('🔄 Processing MasterCard webhook data:', JSON.stringify(webhookData, null, 2));
+    
+    let decryptedData: any = webhookData;
+    
+    // ✅ ИСПРАВЛЕНО: Расшифровываем данные вебхука если они зашифрованы
+    if (webhookData.info && webhookData.key && webhookData.sign) {
+      console.log('🔐 Webhook data is encrypted, decrypting via PHP...');
+      
+      try {
+        const decryptedInfo = await this.decryptResponsePhp(webhookData.info, webhookData.key);
+        decryptedData = JSON.parse(decryptedInfo);
+        console.log('✅ Webhook data decrypted successfully via PHP');
+        console.log('📝 Decrypted webhook data:', JSON.stringify(decryptedData, null, 2));
+      } catch (decryptError) {
+        console.error('❌ Failed to decrypt webhook data via PHP:', decryptError);
+        console.log('⚠️ Falling back to treating data as unencrypted');
+        decryptedData = webhookData;
+      }
+    } else {
+      console.log('📝 Webhook data is not encrypted, processing as-is');
+    }
     
     let status: 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' = 'PENDING';
     
-    if (webhookData.status === 1 && webhookData.final === 1) {
+    // MasterCard status mapping based on official documentation
+    if (decryptedData.status === 100 && decryptedData.final === 1) {
+      // Status 100: Operation completed successfully
       status = 'PAID';
-    } else if (webhookData.status === 0 && webhookData.final === 0) {
+    } else if (decryptedData.final === 0) {
+      // All non-final statuses are pending (payment in progress)
       status = 'PENDING';
-    } else {
+    } else if (decryptedData.final === 1 && decryptedData.status !== 100) {
+      // All final statuses except 100 are failed
       status = 'FAILED';
+    } else {
+      // Default fallback
+      status = 'PENDING';
     }
     
+    // ✅ ИСПРАВЛЕНО: Для поиска платежа используем приоритет:
+    // 1. order_id из webhook (наш gatewayOrderId) 
+    // 2. payment_id из webhook (gatewayPaymentId который мы теперь сохраняем)
+    let paymentId = '';
+    
+    if (decryptedData.order_id) {
+      paymentId = decryptedData.order_id.toString();
+      console.log(`🔍 Using MasterCard order_id for search: ${paymentId}`);
+    } else if (decryptedData.payment_id) {
+      paymentId = decryptedData.payment_id.toString();
+      console.log(`🔍 Using MasterCard payment_id for search: ${paymentId}`);
+    } else {
+      paymentId = decryptedData.orderId 
+        || decryptedData.paymentId
+        || decryptedData.id
+        || '';
+      console.log(`🔍 Using fallback fields for search: ${paymentId}`);
+    }
+    
+    console.log(`📊 MasterCard webhook extracted data:`);
+    console.log(`   Payment ID: ${paymentId} (from: order_id=${decryptedData.order_id}, orderId=${decryptedData.orderId}, payment_id=${decryptedData.payment_id}, paymentId=${decryptedData.paymentId}, id=${decryptedData.id})`);
+    console.log(`   Status: ${status} (from: status=${decryptedData.status}, final=${decryptedData.final})`);
+    console.log(`   Amount: ${decryptedData.amount}`);
+    console.log(`   Currency: ${decryptedData.currency}`);
+    
     return {
-      paymentId: webhookData.order_id || '',
+      paymentId,
       status,
-      amount: webhookData.amount,
-      currency: webhookData.currency,
+      amount: decryptedData.amount,
+      currency: decryptedData.currency,
     };
   }
 
