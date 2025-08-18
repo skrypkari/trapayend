@@ -1,0 +1,24 @@
+{
+    "challenge_data": {
+        "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTIxNDA3Ni1kODBhLTQxYTYtOWRiNy04NjAxYmEzYTY3MDYiLCJpYXQiOjE3NTM5MjE2ODUsImV4cCI6MTc1MzkyMjI4NSwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIn0.fLW6I6PxnKsgsuTNGZOhnQeiBxFzfM9Fu1xE2nY3LnE",
+        "url": "https:\/\/centinelapi.cardinalcommerce.com\/V1\/Cruise\/Collect",
+        "bin": "555770",
+        "transactionReference": "RM69TM27PNK3K412",
+        "outcome": "initialized"
+    },
+    "original_result": {
+        "outcome": "initialized",
+        "transactionReference": "RM69TM27PNK3K412",
+        "deviceDataCollection": {
+            "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTIxNDA3Ni1kODBhLTQxYTYtOWRiNy04NjAxYmEzYTY3MDYiLCJpYXQiOjE3NTM5MjE2ODUsImV4cCI6MTc1MzkyMjI4NSwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIn0.fLW6I6PxnKsgsuTNGZOhnQeiBxFzfM9Fu1xE2nY3LnE",
+            "url": "https:\/\/centinelapi.cardinalcommerce.com\/V1\/Cruise\/Collect",
+            "bin": "555770"
+        }
+    },
+    "payment_data": {
+        "amount": "2",
+        "currency": "EUR",
+        "card_last4": "9668"
+    },
+    "timestamp": "2025-07-31 03:28:05"
+}

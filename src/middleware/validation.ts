@@ -101,7 +101,7 @@ const ALLOWED_SOURCE_CURRENCIES = [
 const ALLOWED_GATEWAY_IDS = Object.keys(GATEWAY_ID_MAP);
 
 // Allowed payment gateways (for admin/internal use)
-const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'CoinToPay2', 'Open Banking 2', 'KLYME EU', 'KLYME GB', 'KLYME DE', 'MasterCard']; // ✅ ДОБАВЛЕНО: Open Banking 2 & CoinToPay2 для обратной совместимости
+const ALLOWED_GATEWAYS = ['Test Gateway', 'Plisio', 'Rapyd', 'Noda', 'CoinToPay', 'CoinToPay2', 'Open Banking 2', 'KLYME EU', 'KLYME GB', 'KLYME DE', 'MasterCard', 'Amer', 'MyXSpend']; // ✅ ДОБАВЛЕНО: Open Banking 2 & CoinToPay2 & Amer для обратной совместимости
 
 // Allowed networks for payouts
 const ALLOWED_NETWORKS = ['polygon', 'trc20', 'erc20', 'bsc'];
@@ -116,12 +116,25 @@ const gatewayIdValidator = Joi.string().custom((value, helpers) => {
   return value;
 });
 
-// ✅ ОБНОВЛЕНО: Gateway settings validation schema с minAmount, maxAmount и payoutDelay
+// ✅ ОБНОВЛЕНО: Gateway settings validation schema с поддержкой специфичных полей для каждого шлюза
 const gatewaySettingsSchema = Joi.object({
   commission: Joi.number().min(0).max(100).required(),
   minAmount: Joi.number().min(0).optional(), // Минимальная сумма платежа
   maxAmount: Joi.number().min(0).optional(), // Максимальная сумма платежа
   payoutDelay: Joi.number().min(0).max(365).optional(), // ✅ НОВОЕ: Задержка выплаты в днях (0-365)
+  // ✅ НОВОЕ: Поля для Amer/Worldpay шлюза
+  customer: Joi.string().min(1).max(50).optional(), // Worldpay Merchant ID
+  co: Joi.string().length(2).optional(), // Country Code
+  product: Joi.string().min(1).max(10).optional(), // Product Category ID
+  country: Joi.string().length(2).uppercase().optional(), // Default billing country
+  // ✅ НОВОЕ: Поля для Rapyd шлюза
+  access_key: Joi.string().min(1).max(100).optional(), // Rapyd access key
+  secret_key: Joi.string().min(1).max(100).optional(), // Rapyd secret key
+  // ✅ НОВОЕ: Поля для других шлюзов (расширяемость)
+  api_key: Joi.string().min(1).max(200).optional(), // Generic API key
+  api_secret: Joi.string().min(1).max(200).optional(), // Generic API secret
+  endpoint: Joi.string().uri().optional(), // Custom endpoint URL
+  webhook_secret: Joi.string().min(1).max(100).optional(), // Webhook secret
 }).custom((value, helpers) => {
   // ✅ НОВОЕ: Проверяем, что maxAmount больше minAmount
   if (value.minAmount !== undefined && value.maxAmount !== undefined) {
@@ -263,7 +276,7 @@ export const createPublicPaymentSchema = Joi.object({
   customer_country: Joi.string().length(2).uppercase().optional(), // ✅ НОВОЕ: Страна клиента (ISO 3166-1 alpha-2)
   customer_ip: Joi.string().ip().optional(),                       // ✅ НОВОЕ: IP адрес клиента
   customer_ua: Joi.string().max(1000).optional(),                  // ✅ НОВОЕ: User Agent клиента
-  // ✅ НОВОЕ: Поля для MasterCard
+  // ✅ ИСПРАВЛЕНО: card_data опционально при создании платежа MasterCard
   card_data: Joi.when('gateway', {
     is: '1111', // MasterCard gateway ID
     then: Joi.object({
@@ -271,7 +284,7 @@ export const createPublicPaymentSchema = Joi.object({
       expire_month: Joi.string().pattern(/^(0[1-9]|1[0-2])$/).required(),
       expire_year: Joi.string().pattern(/^\d{2}$/).required(),
       cvv: Joi.string().pattern(/^\d{3,4}$/).required(),
-    }).required(),
+    }).optional(), // ✅ ИЗМЕНЕНО: с .required() на .optional()
     otherwise: Joi.forbidden(),
   }),
   // New Rapyd fields
@@ -279,7 +292,7 @@ export const createPublicPaymentSchema = Joi.object({
   language: Joi.string().length(2).uppercase().optional(),
   amount_is_editable: Joi.boolean().optional(),
   max_payments: Joi.number().integer().min(1).optional(),
-  customer: Joi.string().pattern(/^cus_/).optional(), // Rapyd customer ID starts with 'cus_'
+  customer: Joi.string().optional(), // ✅ ИСПРАВЛЕНО: убрана проверка pattern для поддержки разных форматов
 });
 
 export const updatePaymentSchema = Joi.object({
@@ -303,7 +316,7 @@ export const updatePaymentSchema = Joi.object({
   language: Joi.string().length(2).uppercase().optional(),
   amountIsEditable: Joi.boolean().optional(),
   maxPayments: Joi.number().integer().min(1).optional(),
-  customer: Joi.string().pattern(/^cus_/).optional(),
+  customer: Joi.string().optional(), // ✅ ИСПРАВЛЕНО: убрана проверка pattern для поддержки разных форматов
 });
 
 // ✅ НОВОЕ: Схема валидации для обновления клиентских данных
@@ -345,9 +358,10 @@ export const createPayoutSchema = Joi.object({
     const fromDate = new Date(value.periodFrom);
     const toDate = new Date(value.periodTo);
     
-    if (fromDate >= toDate) {
+    // ✅ ИЗМЕНЕНО: Разрешаем одинаковые даты (>= вместо >)
+    if (fromDate > toDate) {
       return helpers.error('any.invalid', { 
-        message: 'Period start date must be before end date' 
+        message: 'Period start date must be before or equal to end date' 
       });
     }
     
@@ -487,7 +501,8 @@ export const masterCardPaymentSchema = Joi.object({
   }).required(),
   browser: Joi.object({
     accept_header: Joi.string().min(1).max(500).required(),
-    color_depth: Joi.number().integer().min(1).max(64).required(),
+    // color_depth: Joi.number().integer().min(1).max(64).required(),
+    color_depth: Joi.number().integer().min(1).max(64),
     language: Joi.string().min(1).max(10).required(),
     screen_height: Joi.number().integer().min(1).max(10000).required(),
     screen_width: Joi.number().integer().min(1).max(10000).required(),

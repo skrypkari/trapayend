@@ -1,0 +1,28 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708012124891",
+        "cvv": "263",
+        "expmo": "03",
+        "expyr": "2030",
+        "cardholder": "John Moonly",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.89 (0.2 + 5.10%)",
+        "pool": "6,167.93 available",
+        "undefined": "Buy",
+        "colref": "0_baa7a386-7272-444a-aa68-7368336fdddc",
+        "refid": "92CN83EHTMHNZPZH"
+    },
+    "response": "{\"error\":\"Payment session in wrong state: undefined\"}",
+    "http_code": 400,
+    "error": "",
+    "timestamp": "2025-07-31 02:37:36"
+}

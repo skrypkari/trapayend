@@ -1,0 +1,9 @@
+{
+    "url": "https:\/\/securepayapi.com:2087\/wp3dschallenge",
+    "request_body": "TransactionId=HCVud7j6qz3zGwTIaap0&Response=&MD=",
+    "response": "<html>\r\n<head>\r\n<\/head>\r\n<body>\r\nThank you for verifying\r\n\r\n<script>\r\nwindow.onload = function() {\r\n\tconst data= {MessageType: '3dsauthenticated'};\r\n\twindow.parent.postMessage(JSON.stringify(data), \"*\");\r\n}\r\n<\/script>\r\n<\/body>\r\n<\/html>",
+    "http_code": 200,
+    "http_version": 3,
+    "error": "",
+    "timestamp": "2025-07-31 19:56:00"
+}

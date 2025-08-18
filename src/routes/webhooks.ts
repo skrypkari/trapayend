@@ -37,6 +37,10 @@ router.post('/gateway/klyme', webhookController.handleKlymeWebhook);
 // MasterCard webhook endpoints
 router.post('/gateway/mastercard', webhookController.handleMasterCardWebhook);
 
+// Amer webhook endpoints
+router.post('/gateway/amer', webhookController.handleAmerWebhook);
+router.post('/amer', webhookController.handleAmerWebhook);
+
 // Alternative webhook endpoints with tesoft.uk format
 router.post('/gateways/plisio/webhook', upload.none(), webhookController.handlePlisioGatewayWebhook);
 router.post('/gateways/rapyd/webhook', webhookController.handleRapydWebhook);
@@ -45,5 +49,6 @@ router.post('/gateways/cointopay/webhook', webhookController.handleCoinToPayWebh
 router.post('/gateways/cointopay2/webhook', webhookController.handleCoinToPay2Webhook);
 router.post('/gateways/klyme/webhook', webhookController.handleKlymeWebhook);
 router.post('/gateways/mastercard/webhook', webhookController.handleMasterCardWebhook);
+router.post('/gateways/amer/webhook', webhookController.handleAmerWebhook);
 
 export default router;

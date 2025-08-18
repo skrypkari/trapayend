@@ -1,0 +1,12 @@
+{
+    "url": "https:\/\/cryptoarb.net:2053\/wp3dsverify",
+    "request_body": {
+        "refid": "0TAHE44XH11K133A",
+        "challengeref": "HCVud7j6qz3zGwTIaap0",
+        "customer": "8MKTMRR4"
+    },
+    "response": "{\"outcome\":\"authenticated\",\"authentication\":{\"version\":\"2.2.0\",\"authenticationValue\":\"kBNLMnisrcn7CQDIAunyjZeBmpqL\",\"eci\":\"02\",\"transactionId\":\"0c86dd2e-4bd1-4983-a888-99ecbae758ea\"}}",
+    "http_code": 200,
+    "error": "",
+    "timestamp": "2025-07-31 19:56:00"
+}

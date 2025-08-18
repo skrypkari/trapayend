@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Payment Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Customer Data Collection</h1>
+    
+    <div class="section info">
+        <h3>Test URL Examples:</h3>
+        <ul>
+            <li><code>payment.php?payment_id=test_12345&amount=100&currency=USD</code></li>
+            <li><code>payment.php?payment_id=order_67890&amount=50&currency=EUR&email=test@example.com</code></li>
+            <li><code>payment.php?payment_id=cm123abc456def&amount=75&currency=GBP&name=John Doe</code></li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3>🌍 Customer Data Detection:</h3>
+        <div id="status">🔄 Detecting...</div>
+        <div id="data-display"></div>
+    </div>
+
+    <div class="section">
+        <h3>📤 Test API Request:</h3>
+        <input type="text" id="payment-id" placeholder="Enter payment ID" value="test_12345" style="width: 200px; padding: 5px;">
+        <button onclick="testApiRequest()">Send Customer Data</button>
+        <div id="api-result"></div>
+    </div>
+
+    <script>
+        // Симулируем получение данных пользователя
+        async function collectCustomerData() {
+            const statusEl = document.getElementById('status');
+            const dataEl = document.getElementById('data-display');
+            
+            statusEl.innerHTML = '🌍 Collecting IP and location...';
+            
+            const customerData = {
+                customerIp: null,
+                customerUa: navigator.userAgent,
+                customerCountry: null
+            };
+            
+            try {
+                // Пробуем получить IP через разные сервисы
+                const services = [
+                    { url: 'https://ipapi.co/json/', parser: (data) => ({ ip: data.ip, country: data.country_code }) },
+                    { url: 'https://ipinfo.io/json', parser: (data) => ({ ip: data.ip, country: data.country }) }
+                ];
+                
+                for (const service of services) {
+                    try {
+                        statusEl.innerHTML = `🔍 Trying ${service.url}...`;
+                        const response = await fetch(service.url);
+                        const data = await response.json();
+                        const parsed = service.parser(data);
+                        
+                        if (parsed.ip) {
+                            customerData.customerIp = parsed.ip;
+                            customerData.customerCountry = parsed.country;
+                            break;
+                        }
+                    } catch (e) {
+                        console.log('Service failed:', e);
+                    }
+                }
+                
+                statusEl.innerHTML = '✅ Data collected!';
+                statusEl.className = 'success';
+                
+                // Отображаем собранные данные
+                dataEl.innerHTML = `
+                    <pre>${JSON.stringify(customerData, null, 2)}</pre>
+                `;
+                
+                // Сохраняем для использования в тестах
+                window.collectedData = customerData;
+                
+            } catch (error) {
+                statusEl.innerHTML = '❌ Failed to collect data: ' + error.message;
+                statusEl.className = 'error';
+            }
+        }
+        
+        async function testApiRequest() {
+            const paymentId = document.getElementById('payment-id').value;
+            const resultEl = document.getElementById('api-result');
+            
+            if (!window.collectedData) {
+                resultEl.innerHTML = '<div class="error">❌ No customer data collected yet!</div>';
+                return;
+            }
+            
+            if (!paymentId) {
+                resultEl.innerHTML = '<div class="error">❌ Please enter a payment ID!</div>';
+                return;
+            }
+            
+            resultEl.innerHTML = '<div class="info">📤 Sending request...</div>';
+            
+            try {
+                const response = await fetch(`https://api.trapay.uk/api/payments/${paymentId}/customer`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(window.collectedData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    resultEl.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Request Successful!</h4>
+                            <p><strong>Status:</strong> ${response.status}</p>
+                            <p><strong>Response:</strong></p>
+                            <pre>${JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultEl.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Request Failed!</h4>
+                            <p><strong>Status:</strong> ${response.status}</p>
+                            <p><strong>Error:</strong></p>
+                            <pre>${JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultEl.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Network Error!</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Автоматически собираем данные при загрузке страницы
+        document.addEventListener('DOMContentLoaded', collectCustomerData);
+    </script>
+</body>
+</html>

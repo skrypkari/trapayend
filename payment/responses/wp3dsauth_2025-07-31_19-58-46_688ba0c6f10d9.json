@@ -1,0 +1,28 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708011629668",
+        "cvv": "036",
+        "expmo": "10",
+        "expyr": "2029",
+        "cardholder": "Alliott Merjonn",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "3",
+        "currency": "EUR",
+        "usdc": "2.90 (0.2 + 5.10%)",
+        "pool": "3,527.24 available",
+        "undefined": "Buy",
+        "colref": "0_bfc3d5ce-5183-42d2-b800-f3ae5f6b6f65",
+        "refid": "0Y161PERZCPN0614"
+    },
+    "response": "{\"error\":\"3dsecure authentication unavailable for this card, please try again or contact us to resolve.  Payment id: 0Y161PERZCPN0614\"}",
+    "http_code": 400,
+    "error": "",
+    "timestamp": "2025-07-31 19:58:46"
+}

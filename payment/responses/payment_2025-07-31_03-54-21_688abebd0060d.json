@@ -1,0 +1,26 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708011629668",
+        "cvv": "036",
+        "expmo": "10",
+        "expyr": "2029",
+        "cardholder": "Alliott Merjonn",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.86 (0.2 + 5.10%)",
+        "pool": "6,071.99 available",
+        "undefined": "Buy"
+    },
+    "response": "{\"outcome\":\"initialized\",\"transactionReference\":\"PXPYA17YXM1T1H3T\",\"deviceDataCollection\":{\"jwt\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyNzlmY2Y3YS1lOTdmLTQyOWYtYWUzOS05ZWY4MTQ5ODI4NzIiLCJpYXQiOjE3NTM5MjMyNjAsImV4cCI6MTc1MzkyMzg2MCwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIn0.dkXQDIcefe1c7UY-a3txrCpvimZwTPYdnaJx8qJPSWE\",\"url\":\"https:\/\/centinelapi.cardinalcommerce.com\/V1\/Cruise\/Collect\",\"bin\":\"555770\"}}",
+    "http_code": 200,
+    "curl_error": "",
+    "timestamp": "2025-07-31 03:54:21"
+}

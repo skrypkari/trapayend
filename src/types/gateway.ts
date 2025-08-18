@@ -10,6 +10,8 @@ export const GATEWAY_ID_MAP: Record<string, string> = {
   '1010': 'klyme_gb',
   '1100': 'klyme_de',
   '1111': 'mastercard',
+  '1110': 'amer',
+  '2000': 'myxspend', // ✅ НОВОЕ: MyXSpend - Open Banking MX
 };
 
 // Reverse mapping for name to ID
@@ -24,6 +26,8 @@ export const GATEWAY_NAME_MAP: Record<string, string> = {
   'klyme_gb': '1010',
   'klyme_de': '1100',
   'mastercard': '1111',
+  'amer': '1110',
+  'myxspend': '2000', // ✅ НОВОЕ: MyXSpend - Open Banking MX
 };
 
 export interface GatewayInfo {
@@ -103,6 +107,19 @@ export const AVAILABLE_GATEWAYS: GatewayInfo[] = [
     displayName: 'MasterCard',
     isActive: true,
   },
+  {
+    id: '1110',
+    name: 'amer',
+    displayName: 'Amer',
+    isActive: true,
+  },
+  {
+    id: '2000',
+    name: 'myxspend',
+    displayName: 'MyXSpend',
+    region: 'MX',
+    isActive: true,
+  }
 ];
 
 // ✅ ДОБАВЛЕНО: Детальная информация о шлюзах для Telegram уведомлений
@@ -213,6 +230,28 @@ export const GATEWAY_INFO: Record<string, GatewayInfo> = {
     description: 'MasterCard payment processing - ID: 1111',
     features: ['Cards', 'MasterCard'],
     color: 'bg-red-500',
+    fee: '10%',
+    payout: 'T+5',
+    isActive: true,
+  },
+  '1110': {
+    id: '1110',
+    name: 'Amer',
+    displayName: '1110 - Bank Card - Amer',
+    description: 'Amer MasterCard 3D Secure processing - ID: 1110',
+    features: ['Cards', 'MasterCard', '3D Secure'],
+    color: 'bg-orange-500',
+    fee: '10%',
+    payout: 'T+5',
+    isActive: true,
+  },
+  '2000': {
+    id: '2000',
+    name: 'MyXSpend',
+    displayName: '2000 - Open Banking MX',
+    description: 'MyXSpend Open Banking Mexico processing - ID: 2000',
+    features: ['Open Banking', 'MXN', 'USD'],
+    color: 'bg-green-600',
     fee: '10%',
     payout: 'T+5',
     isActive: true,

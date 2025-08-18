@@ -1,0 +1,34 @@
+{
+    "url": "https:\/\/cryptoarb.net:2053\/wppay",
+    "request_body": {
+        "refid": "0TAHE44XH11K133A",
+        "challengeref": "HCVud7j6qz3zGwTIaap0",
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708011629668",
+        "cvv": "036",
+        "expmo": "10",
+        "expyr": "2029",
+        "cardholder": "Alliott Merjonn",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.86 (0.2 + 5.09%)",
+        "pool": "6121.27 available",
+        "auth3ds": {
+            "version": "2.2.0",
+            "authenticationValue": "kBNLMnisrcn7CQDIAunyjZeBmpqL",
+            "eci": "02",
+            "transactionId": "0c86dd2e-4bd1-4983-a888-99ecbae758ea"
+        }
+    },
+    "response": "{\"response\":\"Thank you for your payment.  Your order id is 0TAHE44XH11K133A.  Your receipt and delivery confirmation will be emailed to you.\",\"order\":\"0TAHE44XH11K133A\"}",
+    "http_code": 200,
+    "error": "",
+    "timestamp": "2025-07-31 19:56:05"
+}

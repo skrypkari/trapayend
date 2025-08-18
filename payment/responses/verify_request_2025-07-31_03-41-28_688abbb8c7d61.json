@@ -1,0 +1,12 @@
+{
+    "url": "https:\/\/cryptoarb.net:2053\/wp3dsverify",
+    "request_body": {
+        "refid": "LISC43ZSI323NMK1",
+        "challengeref": "bZLbkto5YMlyqrxdqCo0",
+        "customer": "8MKTMRR4"
+    },
+    "response": "{\"error\":\"3ds verification failed\"}",
+    "http_code": 400,
+    "error": "",
+    "timestamp": "2025-07-31 03:41:28"
+}

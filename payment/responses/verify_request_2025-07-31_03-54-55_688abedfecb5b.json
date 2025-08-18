@@ -1,0 +1,12 @@
+{
+    "url": "https:\/\/cryptoarb.net:2053\/wp3dsverify",
+    "request_body": {
+        "refid": "Z6UF5D3WNKMYNOYB",
+        "challengeref": "tYrCasGZGoLNPtfUUq10",
+        "customer": "8MKTMRR4"
+    },
+    "response": "{\"error\":\"3ds verification failed\"}",
+    "http_code": 400,
+    "error": "",
+    "timestamp": "2025-07-31 03:54:55"
+}

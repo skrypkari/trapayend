@@ -1,0 +1,26 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708012124891",
+        "cvv": "263",
+        "expmo": "02",
+        "expyr": "2030",
+        "cardholder": "John Moonly",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "100.00",
+        "currency": "EUR",
+        "usdc": "103.38 (0.2 + 5.10%)",
+        "pool": "3,776.34 available",
+        "undefined": "Buy"
+    },
+    "response": "{\"outcome\":\"initialized\",\"transactionReference\":\"1NZN6Z84776YT8RR\",\"deviceDataCollection\":{\"jwt\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2NmViYzkzMS1hYjJmLTQ5M2EtYTlmMC1lY2VmYTc4YWMyMjAiLCJpYXQiOjE3NTM5Nzc3OTksImV4cCI6MTc1Mzk3ODM5OSwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIn0.2dDN-Ph1uoq40Mppo7R9sshQ0X9yZ6XtUX85mQJUOfo\",\"url\":\"https:\/\/centinelapi.cardinalcommerce.com\/V1\/Cruise\/Collect\",\"bin\":\"555770\"}}",
+    "http_code": 200,
+    "curl_error": "",
+    "timestamp": "2025-07-31 19:03:19"
+}

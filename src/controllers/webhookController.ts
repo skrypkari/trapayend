@@ -247,4 +247,33 @@ export class WebhookController {
       });
     }
   };
+
+  // Amer webhook handler
+  handleAmerWebhook = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      console.log('Received Amer webhook:', req.body);
+      
+      // Log incoming webhook with headers
+      loggerService.logWebhookReceived('amer', req.body, req.headers);
+      
+      const result = await this.webhookService.processAmerWebhook(req.body);
+      
+      // Amer expects 200 OK response
+      res.status(200).json({
+        success: true,
+        message: 'Amer webhook processed successfully',
+      });
+    } catch (error) {
+      console.error('Amer webhook processing error:', error);
+      
+      // Log webhook processing error
+      loggerService.logWebhookError('amer', error, req.body);
+      
+      // Still return 200 to prevent Amer from retrying
+      res.status(200).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Amer webhook processing failed',
+      });
+    }
+  };
 }

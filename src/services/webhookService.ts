@@ -6,6 +6,7 @@ import { CoinToPayService } from './gateways/coinToPayService';
 import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
 import { MasterCardService } from './gateways/mastercardService';
+import { AmerService } from './gateways/amerService';
 import { telegramBotService } from './telegramBotService';
 import { currencyService } from './currencyService';
 import { loggerService } from './loggerService';
@@ -18,6 +19,7 @@ export class WebhookService {
   private coinToPay2Service: CoinToPay2Service;
   private klymeService: KlymeService;
   private masterCardService: MasterCardService;
+  private amerService: AmerService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -27,6 +29,7 @@ export class WebhookService {
     this.coinToPay2Service = new CoinToPay2Service();
     this.klymeService = new KlymeService();
     this.masterCardService = new MasterCardService();
+    this.amerService = new AmerService();
   }
 
   // ✅ НОВОЕ: Универсальный метод для обновления статуса платежа с управлением балансом
@@ -662,7 +665,8 @@ export class WebhookService {
 
       console.log(`✅ Found payment ${payment.id} for MasterCard webhook, updating status from ${payment.status} to ${result.status}`);
 
-      // Обновляем статус
+      // ✅ НОВОЕ: Для MasterCard webhook не перезаписываем cardLast4, только обновляем статус
+      // cardLast4 уже сохраняется при первоначальной обработке платежа в paymentController
       await this.updatePaymentStatus(payment.id, result.status);
 
       loggerService.logWebhookProcessed(
@@ -676,6 +680,64 @@ export class WebhookService {
     } catch (error) {
       console.error('❌ Error processing MasterCard webhook:', error);
       loggerService.logWebhookError('mastercard', error, webhookData);
+      throw error;
+    }
+  }
+
+  // Обработка webhook от Amer
+  async processAmerWebhook(webhookData: any): Promise<void> {
+    console.log('🔄 Processing Amer webhook:', JSON.stringify(webhookData, null, 2));
+
+    try {
+      const result = await this.amerService.processWebhook(webhookData);
+      
+      console.log(`📊 Amer webhook result:`, result);
+      
+      if (!result.paymentId) {
+        console.error('❌ No payment ID extracted from Amer webhook data');
+        console.error('❌ Available webhook fields:', Object.keys(webhookData));
+        throw new Error('No payment ID in Amer webhook');
+      }
+
+      // Ищем платеж по различным полям для Amer
+      let payment = null;
+      
+      console.log(`🔍 Amer webhook: Searching for payment with ID: ${result.paymentId}`);
+      
+      payment = await prisma.payment.findFirst({
+        where: {
+          AND: [
+            { gateway: 'amer' },
+            {
+              OR: [
+                { gatewayPaymentId: result.paymentId },
+                { gatewayOrderId: result.paymentId },
+                { id: result.paymentId },
+                { orderId: result.paymentId },
+              ],
+            },
+          ],
+        },
+      });
+      
+      console.log(`🔍 Search result: ${payment ? `Found payment ${payment.id}` : 'Payment not found'}`);
+
+      if (!payment) {
+        console.error(`❌ Payment not found for Amer webhook with ID: ${result.paymentId}`);
+        return;
+      }
+
+      console.log(`📊 Amer webhook: Payment ${payment.id} status ${result.status}`);
+
+      // Обновляем статус платежа
+      await this.updatePaymentStatus(payment.id, result.status, {
+        cardLast4: result.additionalInfo?.cardLast4,
+        paymentMethod: result.additionalInfo?.paymentMethod
+      });
+
+    } catch (error) {
+      console.error('❌ Error processing Amer webhook:', error);
+      loggerService.logWebhookError('amer', error, webhookData);
       throw error;
     }
   }

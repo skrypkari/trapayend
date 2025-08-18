@@ -1,0 +1,12 @@
+{
+    "request": {
+        "amount": "2",
+        "processor": "worldpay",
+        "customer": "8MKTMRR4",
+        "currency": "EUR",
+        "cc": "5557708011629668"
+    },
+    "response": "{\"amount\":2,\"usdamount\":2.183106226046114,\"currency\":\"eur\",\"pool\":\"0x0DCA2B8db5E95D7116437d3Eed8757e0b650f3A9\",\"balance\":6119.073532,\"reserve\":-1,\"wallet\":\"0xB195112cd0d5B88C043750898c40e780D732806C\",\"country\":\"PL\",\"numtxns\":-1,\"bininfo\":{\"bin\":555770,\"country\":\"PL\",\"category\":\"consumer\",\"funding\":\"debit\",\"issuer\":\"QUICKO SP Z OO\",\"intpercent\":0.016,\"intbase\":0,\"intcategory\":\"Interregional Consumer Rate I Digital Commerce Core\",\"restriction\":null},\"fee\":{\"base\":0.20753550000000004,\"percent\":0.05099999999999999,\"profit\":0.01,\"refundbase\":0.2},\"usdc\":1.864232308517762,\"amountOutMin\":1.864232308517762,\"burn\":0.001864232308517762}",
+    "http_code": 200,
+    "timestamp": "2025-07-31 03:28:05"
+}

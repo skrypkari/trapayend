@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Customer Data Collection</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-2xl font-bold mb-6">Test Customer Data Collection</h1>
+        
+        <div id="status" class="mb-4 p-4 bg-blue-50 rounded-lg">
+            <p class="text-blue-700">🌍 Collecting customer data...</p>
+        </div>
+        
+        <div id="results" class="space-y-4"></div>
+        
+        <div class="mt-6">
+            <button id="testButton" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Test PUT Request
+            </button>
+        </div>
+        
+        <div id="request-result" class="mt-4"></div>
+    </div>
+
+    <script>
+        class CustomerDataCollector {
+            constructor() {
+                this.customerData = {
+                    customerIp: null,
+                    customerUa: navigator.userAgent,
+                    customerCountry: null
+                };
+                this.collectData();
+            }
+
+            async collectData() {
+                console.log('🌍 Starting customer data collection...');
+                this.updateStatus('🌍 Getting location data...', 'blue');
+                
+                // 1. User-Agent (уже есть)
+                this.displayResult('User-Agent', this.customerData.customerUa);
+                
+                // 2. Получаем IP и геолокацию
+                try {
+                    await this.getIpAndLocation();
+                } catch (error) {
+                    console.error('❌ Error getting IP/location:', error);
+                    await this.getIpOnly();
+                }
+                
+                this.displayFinalResults();
+            }
+
+            async getIpAndLocation() {
+                const services = [
+                    { url: 'https://ipapi.co/json/', name: 'ipapi.co' },
+                    { url: 'https://ipinfo.io/json', name: 'ipinfo.io' },
+                    { url: 'https://api.ipify.org?format=json', name: 'ipify.org' }
+                ];
+                
+                for (const service of services) {
+                    try {
+                        this.updateStatus(`🔍 Trying ${service.name}...`, 'yellow');
+                        const response = await fetch(service.url);
+                        const data = await response.json();
+                        
+                        console.log(`📍 ${service.name} response:`, data);
+                        
+                        if (service.name === 'ipapi.co') {
+                            this.customerData.customerIp = data.ip;
+                            this.customerData.customerCountry = data.country_code;
+                        } else if (service.name === 'ipinfo.io') {
+                            this.customerData.customerIp = data.ip;
+                            this.customerData.customerCountry = data.country;
+                        } else if (service.name === 'ipify.org') {
+                            this.customerData.customerIp = data.ip;
+                            await this.getCountryByIp(data.ip);
+                        }
+                        
+                        if (this.customerData.customerIp) {
+                            this.updateStatus(`✅ Success with ${service.name}`, 'green');
+                            break;
+                        }
+                    } catch (error) {
+                        console.log(`❌ ${service.name} failed:`, error);
+                        continue;
+                    }
+                }
+            }
+
+            async getIpOnly() {
+                try {
+                    const response = await fetch('https://api.ipify.org?format=json');
+                    const data = await response.json();
+                    this.customerData.customerIp = data.ip;
+                    await this.getCountryByIp(data.ip);
+                } catch (error) {
+                    this.customerData.customerIp = '0.0.0.0';
+                    this.customerData.customerCountry = 'XX';
+                }
+            }
+
+            async getCountryByIp(ip) {
+                try {
+                    const response = await fetch(`https://ipapi.co/${ip}/country/`);
+                    const country = await response.text();
+                    if (country && country.length === 2) {
+                        this.customerData.customerCountry = country.trim();
+                    }
+                } catch (error) {
+                    this.customerData.customerCountry = 'XX';
+                }
+            }
+
+            updateStatus(message, color) {
+                const status = document.getElementById('status');
+                const colors = {
+                    blue: 'bg-blue-50 text-blue-700',
+                    yellow: 'bg-yellow-50 text-yellow-700',
+                    green: 'bg-green-50 text-green-700',
+                    red: 'bg-red-50 text-red-700'
+                };
+                status.className = `mb-4 p-4 rounded-lg ${colors[color]}`;
+                status.innerHTML = `<p>${message}</p>`;
+            }
+
+            displayResult(label, value) {
+                const results = document.getElementById('results');
+                const div = document.createElement('div');
+                div.className = 'p-3 bg-gray-50 rounded';
+                div.innerHTML = `<strong>${label}:</strong> <span class="font-mono text-sm">${value}</span>`;
+                results.appendChild(div);
+            }
+
+            displayFinalResults() {
+                this.displayResult('IP Address', this.customerData.customerIp || 'Not detected');
+                this.displayResult('Country Code', this.customerData.customerCountry || 'Not detected');
+                
+                console.log('📊 Final customer data:', this.customerData);
+            }
+
+            async testPutRequest() {
+                const paymentId = 'test_payment_12345'; // Тестовый ID
+                
+                try {
+                    this.updateStatus('📤 Sending PUT request...', 'yellow');
+                    
+                    const response = await fetch(`https://api.trapay.uk/api/payments/${paymentId}/customer`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(this.customerData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    const resultDiv = document.getElementById('request-result');
+                    
+                    if (response.ok) {
+                        resultDiv.className = 'mt-4 p-4 bg-green-50 border border-green-200 rounded';
+                        resultDiv.innerHTML = `
+                            <h3 class="font-bold text-green-800">✅ Request Successful</h3>
+                            <pre class="mt-2 text-sm">${JSON.stringify(result, null, 2)}</pre>
+                        `;
+                        this.updateStatus('✅ PUT request successful', 'green');
+                    } else {
+                        resultDiv.className = 'mt-4 p-4 bg-red-50 border border-red-200 rounded';
+                        resultDiv.innerHTML = `
+                            <h3 class="font-bold text-red-800">❌ Request Failed</h3>
+                            <p class="text-red-700">Status: ${response.status}</p>
+                            <pre class="mt-2 text-sm">${JSON.stringify(result, null, 2)}</pre>
+                        `;
+                        this.updateStatus(`❌ PUT request failed (${response.status})`, 'red');
+                    }
+                } catch (error) {
+                    console.error('❌ PUT request error:', error);
+                    const resultDiv = document.getElementById('request-result');
+                    resultDiv.className = 'mt-4 p-4 bg-red-50 border border-red-200 rounded';
+                    resultDiv.innerHTML = `
+                        <h3 class="font-bold text-red-800">❌ Network Error</h3>
+                        <p class="text-red-700">${error.message}</p>
+                    `;
+                    this.updateStatus('❌ Network error', 'red');
+                }
+            }
+
+            getData() {
+                return this.customerData;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window.customerDataCollector = new CustomerDataCollector();
+            
+            document.getElementById('testButton').addEventListener('click', () => {
+                window.customerDataCollector.testPutRequest();
+            });
+        });
+    </script>
+</body>
+</html>

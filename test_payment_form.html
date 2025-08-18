@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment Form Tests</title>
+</head>
+<body>
+    <h1>Payment Form Display Tests</h1>
+    
+    <h2>Test Cases:</h2>
+    
+    <h3>1. Без параметров (показать все поля):</h3>
+    <a href="../payment/payment.php?payment_id=test123" target="_blank">
+        payment.php?payment_id=test123
+    </a>
+    
+    <h3>2. С amount параметром (скрыть amount поле):</h3>
+    <a href="../payment/payment.php?payment_id=test123&amount=100" target="_blank">
+        payment.php?payment_id=test123&amount=100
+    </a>
+    
+    <h3>3. С currency параметром (скрыть currency поле):</h3>
+    <a href="../payment/payment.php?payment_id=test123&currency=USD" target="_blank">
+        payment.php?payment_id=test123&currency=USD
+    </a>
+    
+    <h3>4. С обоими параметрами (скрыть оба поля):</h3>
+    <a href="../payment/payment.php?payment_id=test123&amount=100&currency=USD" target="_blank">
+        payment.php?payment_id=test123&amount=100&currency=USD
+    </a>
+
+</body>
+</html>

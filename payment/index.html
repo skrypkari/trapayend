@@ -1,0 +1,100 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "xhtml11.dtd">
+<html lang="uk">
+<head>
+	<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8" />
+	<TITLE>Поздравляем, сайт создан!</TITLE>
+	<style>
+		body {margin:0;padding:0;font: 12px Tahoma;}
+		h1 {font-size:20px;color:#1F84FF;margin-bottom:20px;margin-top:0;font-weight:normal;line-height:30px;}
+		a {color:#1873b4;}
+		div {width: 700px;margin: 100px auto 0 auto;padding-top: 50px;height: 120px;line-height: 150%;}
+	</style>
+	
+<script nonce="d369425e">
+
+		window.languages = {
+            'en': {
+                'title': 	 'Congratulations, the site has been created!',
+                'h1': 		 'Site www.api2.trapay.uk is ready to use',
+                '.message1': 'Congratulations, your website is up and running!',
+                '.message2': 'To put your site in this place, delete the index.html file in the site folder and write your site files to this folder.',
+                '.message3': 'In the <a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">FAQ</a>, You can read about how to upload a website to hosting.',
+                '.message4': 'If you have any difficulties &mdash; contact <a rel="nofollow" href="https://adm.tools/support/">support</a>.',
+            },
+            'pl': {
+                'title': 	 'Gratulacje, strona powstała!',
+                'h1': 		 'Witryna www.api2.trapay.uk jest gotowa do użycia',
+                '.message1': 'Gratulacje, Twoja witryna już działa!',
+                '.message2': 'Aby umieścić swoją witrynę w tym miejscu, usuń plik index.html z folderu witryny i zapisz swoje pliki witryny w tym folderze.',
+                '.message3': 'W <a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">Najczęstsze pytania</a> możesz przeczytaj o tym, jak przesłać witrynę do hostingu.',
+                '.message4': 'Jeśli masz jakiekolwiek trudności &mdash; skontaktuj się z <a rel="nofollow" href="https://adm.tools/support/">pomocą</a>.',
+            },
+            'de': {
+                'title': 	 'Herzlichen Glückwunsch, die Seite wurde erstellt!',
+                'h1': 		 'Die Website www.api2.trapay.uk ist einsatzbereit',
+                '.message1': 'Herzlichen Glückwunsch, Ihre Website ist online!',
+                '.message2': 'Um Ihre Site an diesem Ort abzulegen, löschen Sie die Datei index.html im Site-Ordner und schreiben Sie Ihre Site-Dateien in diesen Ordner.',
+                '.message3': 'In den <a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">FAQ</a> können Sie Lesen Sie, wie Sie eine Website zum Hosting hochladen.',
+                '.message4': 'Bei Schwierigkeiten &ndash; Wenden Sie sich an den <a rel="nofollow" href="https://adm.tools/support/">Support</a>.',
+            },
+            'uk': {
+                'title': 	 'Вітаємо, сайт створено!',
+                'h1': 		 'Сайт www.api2.trapay.uk готовий до використання',
+                '.message1': 'Вітаємо, сайт створений та готовий до використання!',
+                '.message2': 'Щоб на цьому місці опинився Ваш сайт, видаліть файл index.html у папці сайту та запишіть у цю папку файли свого сайту.',
+                '.message3': 'У розділі <a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">запитання та відповіді</a>, Ви можете прочитати про те, як завантажити сайт на хостинг.',
+                '.message4': 'Якщо у Вас виникнуть проблеми &mdash; зверніться до <a rel="nofollow" href="https://adm.tools/support/">служби підтримки</a>.',
+            },
+            'cn': {
+                'title': 	 '恭喜，网站已创建！',
+                'h1': 		 '站点 www.api2.trapay.uk 已准备好使用',
+                '.message1': '恭喜，您的网站已启动并运行！',
+                '.message2': '要将您的站点放在此位置，请删除站点文件夹中的 index.html 文件并将您的站点文件写入此文件夹。',
+                '.message3': '在<a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">FAQ</a>中，您可以阅读有关如何将网站上传到主机的信息。',
+                '.message4': '如果您有任何困难&mdash;联系 <a rel="nofollow" href="https://adm.tools/support/">支持</a>。',
+            },
+            'ru': {
+                'title': 	 'Поздравляем, сайт создан!',
+                'h1': 		 'Сайт www.api2.trapay.uk готов к использованию',
+                '.message1': 'Поздравляем, Ваш сайт создан и готов к использованию!',
+                '.message2': 'Чтобы на этом месте оказался Ваш сайт, удалите файл index.html в папке сайта и запишите в эту папку файлы своего сайта.',
+                '.message3': 'В разделе <a href="http://ukraine.com.ua/wiki/" rel="nofollow" target="_blank">вопросы и ответы</a>, Вы можете прочесть о том, как закачать сайт на хостинг.',
+                '.message4': 'Если у Вас возникнут трудности &mdash; обращайтесь в <a rel="nofollow" href="https://adm.tools/support/">службу поддержки</a>.',
+            }
+        };
+
+        function display(){
+            let default_lang = 'en',
+                browser_lang = window.navigator.language || navigator.userLanguage,
+                lang = '';
+
+            browser_lang = browser_lang.slice(0, 2).toLowerCase();
+
+            if( window.languages.hasOwnProperty(browser_lang) ){
+                lang = browser_lang;
+            }else{
+                lang = default_lang;
+            }
+
+            for (let key in window.languages[lang]){
+                if(undefined !== document.querySelector(key)){
+                    document.querySelector(key).innerHTML = window.languages[lang][key];
+				}
+			}
+
+			return false;
+		}
+
+        document.addEventListener("DOMContentLoaded", display);
+	</script>
+</head>
+<body>
+<div>
+	<h1></h1>
+	<p class="message1" style="margin-bottom: 20px"></p>
+	<p class="message2" style="margin-bottom: 20px"></p>
+	<p class="message3"></p>
+	<p class="message4" style="margin-top: -10px"></p>
+</div>
+</body>
+</html>

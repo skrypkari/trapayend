@@ -186,23 +186,16 @@ export class AdminService {
     const [
       totalShops,
       activeShops,
-      totalPayments,
-      successfulPayments,
-      totalRevenue,
+      successfulPayments, // ✅ ИЗМЕНЕНО: Теперь это основной показатель
+      successfulPaymentsForRevenue, // ✅ ДОБАВЛЕНО: Для расчета выручки и комиссии
       recentPayments,
       dailyPayments, // ✅ ДОБАВЛЕНО: Получаем все платежи для дневной статистики
     ] = await Promise.all([
       prisma.shop.count(),
       prisma.shop.count({ where: { status: 'ACTIVE' } }),
       prisma.payment.count({
-        where: { 
-          createdAt: { gte: startDate },
-          gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
-        },
-      }),
-      prisma.payment.count({
         where: {
-          status: 'PAID',
+          status: 'PAID', // ✅ ИЗМЕНЕНО: Считаем только успешные платежи
           createdAt: { gte: startDate },
           gateway: { not: 'test_gateway' }, // Exclude test gateway from statistics
         },
@@ -216,6 +209,7 @@ export class AdminService {
         select: {
           amount: true,
           currency: true,
+          amountAfterGatewayCommissionUSDT: true, // ✅ ДОБАВЛЕНО: Для расчета нашей комиссии
         },
       }),
       prisma.payment.findMany({
@@ -249,22 +243,48 @@ export class AdminService {
     ]);
 
     let totalRevenueUSDT = 0;
-    for (const payment of totalRevenue) {
+    let trapayEarningsUSDT = 0; // ✅ ДОБАВЛЕНО: Заработок TrapayEnd
+    
+    for (const payment of successfulPaymentsForRevenue) {
+      // Общая выручка (сумма успешных платежей)
       const usdtAmount = await currencyService.convertToUSDT(payment.amount, payment.currency);
       totalRevenueUSDT += usdtAmount;
+      
+      // ✅ ДОБАВЛЕНО: Расчет заработка TrapayEnd (разница между оригинальной суммой и суммой после комиссии)
+      if (payment.amountAfterGatewayCommissionUSDT) {
+        const originalAmountUSDT = await currencyService.convertToUSDT(payment.amount, payment.currency);
+        const afterCommissionUSDT = payment.amountAfterGatewayCommissionUSDT;
+        const trapayCommission = originalAmountUSDT - afterCommissionUSDT;
+        trapayEarningsUSDT += trapayCommission;
+      }
     }
+
+    // ✅ ДОБАВЛЕНО: Средний чек только от успешных платежей
+    const averagePaymentAmount = successfulPayments > 0 ? totalRevenueUSDT / successfulPayments : 0;
 
     // ✅ ДОБАВЛЕНО: Генерируем дневную статистику
     const dailyStats = this.generateDailyStatistics(dailyPayments, startDate, now);
 
-    const conversionRate = totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0;
+    // ✅ ИЗМЕНЕНО: Конверсия теперь рассчитывается от всех попыток к успешным
+    // Для этого нужно получить общее количество платежей за период
+    const totalAttempts = await prisma.payment.count({
+      where: { 
+        createdAt: { gte: startDate },
+        gateway: { not: 'test_gateway' },
+      },
+    });
+    
+    const conversionRate = totalAttempts > 0 ? (successfulPayments / totalAttempts) * 100 : 0;
 
     return {
       totalShops,
       activeShops,
-      totalPayments,
-      successfulPayments,
+      totalPayments: successfulPayments, // ✅ ИЗМЕНЕНО: Теперь показываем количество успешных платежей
+      successfulPayments, // ✅ ДОБАВЛЕНО: Оставляем для совместимости
+      totalAttempts, // ✅ ДОБАВЛЕНО: Общее количество попыток платежей
       totalRevenue: Math.round(totalRevenueUSDT * 100) / 100,
+      trapayEarnings: Math.round(trapayEarningsUSDT * 100) / 100, // ✅ ДОБАВЛЕНО: Заработок TrapayEnd
+      averagePaymentAmount: Math.round(averagePaymentAmount * 100) / 100, // ✅ ДОБАВЛЕНО: Средний чек
       conversionRate: Math.round(conversionRate * 100) / 100,
       dailyRevenue: dailyStats.dailyRevenue, // ✅ ДОБАВЛЕНО
       dailyPayments: dailyStats.dailyPayments, // ✅ ДОБАВЛЕНО
@@ -1265,7 +1285,46 @@ export class AdminService {
         skip,
         take: limit,
         orderBy: orderBy,
-        include: {
+        select: {
+          id: true,
+          shopId: true,
+          amount: true,
+          amountAfterGatewayCommissionUSDT: true,
+          currency: true,
+          sourceCurrency: true,
+          status: true,
+          gateway: true,
+          orderId: true,
+          gatewayOrderId: true,
+          gatewayPaymentId: true,
+          customerEmail: true,
+          customerName: true,
+          customerCountry: true,
+          customerIp: true,
+          customerUa: true,
+          externalPaymentUrl: true,
+          successUrl: true,
+          failUrl: true,
+          pendingUrl: true,
+          whiteUrl: true,
+          expiresAt: true,
+          invoiceTotalSum: true,
+          qrCode: true,
+          qrUrl: true,
+          country: true,
+          language: true,
+          amountIsEditable: true,
+          maxPayments: true,
+          rapydCustomer: true,
+          cardLast4: true,
+          paymentMethod: true,
+          bankId: true,
+          remitterIban: true,
+          remitterName: true,
+          failureMessage: true,
+          usage: true,
+          createdAt: true,
+          updatedAt: true,
           shop: {
             select: {
               name: true,
@@ -1291,7 +1350,46 @@ export class AdminService {
   async getPaymentById(id: string): Promise<any | null> {
     const payment = await prisma.payment.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        shopId: true,
+        amount: true,
+        amountAfterGatewayCommissionUSDT: true,
+        currency: true,
+        sourceCurrency: true,
+        status: true,
+        gateway: true,
+        orderId: true,
+        gatewayOrderId: true,
+        gatewayPaymentId: true,
+        customerEmail: true,
+        customerName: true,
+        customerCountry: true,
+        customerIp: true,
+        customerUa: true,
+        externalPaymentUrl: true,
+        successUrl: true,
+        failUrl: true,
+        pendingUrl: true,
+        whiteUrl: true,
+        expiresAt: true,
+        invoiceTotalSum: true,
+        qrCode: true,
+        qrUrl: true,
+        country: true,
+        language: true,
+        amountIsEditable: true,
+        maxPayments: true,
+        rapydCustomer: true,
+        cardLast4: true,
+        paymentMethod: true,
+        bankId: true,
+        remitterIban: true,
+        remitterName: true,
+        failureMessage: true,
+        usage: true,
+        createdAt: true,
+        updatedAt: true,
         shop: {
           select: {
             name: true,

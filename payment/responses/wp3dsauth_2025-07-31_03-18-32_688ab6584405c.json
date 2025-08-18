@@ -1,0 +1,28 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708011629668",
+        "cvv": "036",
+        "expmo": "10",
+        "expyr": "29",
+        "cardholder": "Alliott Merjonn",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.86 (0.2 + 5.10%)",
+        "pool": "6,119.07 available",
+        "undefined": "Buy",
+        "colref": "0_b0f18dbe-0751-48bb-a4f4-347fa83faa8a",
+        "refid": "38YRTHHH68PR3Z6H"
+    },
+    "response": "{\"reference\":\"sMBmqtJpSVIlSpmshKP0\",\"url\":\"https:\/\/centinelapi.cardinalcommerce.com\/V2\/Cruise\/StepUp\",\"jwt\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0MDcxMGMwZi0zYTE2LTQzZjAtYTQwZS02MjVhOWQ2Zjc5ZjYiLCJpYXQiOjE3NTM5MjExMTEsImV4cCI6MTc1MzkyMTcxMSwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIiwiUmV0dXJuVXJsIjoiaHR0cHM6Ly9zZWN1cmVwYXlhcGkuY29tOjIwODcvd3AzZHNjaGFsbGVuZ2UiLCJQYXlsb2FkIjoie1wiUGF5bG9hZFwiOlwiZXlKdFpYTnpZV2RsVkhsd1pTSTZJa05TWlhFaUxDSnRaWE56WVdkbFZtVnljMmx2YmlJNklqSXVNaTR3SWl3aWRHaHlaV1ZFVTFObGNuWmxjbFJ5WVc1elNVUWlPaUl4WlRVNVlqWmlZaTB6TW1ZeUxUUTVObUV0WW1NMU5TMWhOalUyTldKbVpUVXpZelFpTENKaFkzTlVjbUZ1YzBsRUlqb2lZMkkzT0dWbE5tRXRNR1prTUMwMFlXWmxMVGxqWm1VdE9Ea3paV0k1T1RFeE5UQTVJaXdpWTJoaGJHeGxibWRsVjJsdVpHOTNVMmw2WlNJNklqQXlJbjBcIixcIkFDU1VybFwiOlwiaHR0cHM6XFwvXFwvYWNzLWNoYWxsZW5nZS5hcGF0YS5pb1xcL3YxXFwvQnJvd3NlckNSZXFcIixcIlRyYW5zYWN0aW9uSWRcIjpcInNNQm1xdEpwU1ZJbFNwbXNoS1AwXCJ9IiwiT2JqZWN0aWZ5UGF5bG9hZCI6ZmFsc2V9.MdqcYldiXESXZl9R4Ji7agL0alfpkMIViWAfYKWRABg\",\"payload\":\"eyJtZXNzYWdlVHlwZSI6IkNSZXEiLCJtZXNzYWdlVmVyc2lvbiI6IjIuMi4wIiwidGhyZWVEU1NlcnZlclRyYW5zSUQiOiIxZTU5YjZiYi0zMmYyLTQ5NmEtYmM1NS1hNjU2NWJmZTUzYzQiLCJhY3NUcmFuc0lEIjoiY2I3OGVlNmEtMGZkMC00YWZlLTljZmUtODkzZWI5OTExNTA5IiwiY2hhbGxlbmdlV2luZG93U2l6ZSI6IjAyIn0\",\"md\":\"\"}",
+    "http_code": 200,
+    "error": "",
+    "timestamp": "2025-07-31 03:18:32"
+}

@@ -8,6 +8,8 @@ import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
 import { TestGatewayService } from './gateways/testGatewayService';
 import { MasterCardService } from './gateways/mastercardService';
+import { AmerService } from './gateways/amerService';
+import { MyXSpendService } from './gateways/myxspendService';
 import { telegramBotService } from './telegramBotService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, getGatewayIdByName, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
@@ -22,6 +24,8 @@ export class PaymentService {
   private klymeService: KlymeService;
   private testGatewayService: TestGatewayService;
   private masterCardService: MasterCardService;
+  private amerService: AmerService;
+  private myxspendService: MyXSpendService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -32,6 +36,8 @@ export class PaymentService {
     this.klymeService = new KlymeService();
     this.testGatewayService = new TestGatewayService();
     this.masterCardService = new MasterCardService();
+    this.amerService = new AmerService();
+    this.myxspendService = new MyXSpendService();
   }
 
   private async generateGatewayOrderId(): Promise<string> {
@@ -278,29 +284,54 @@ export class PaymentService {
         console.log(`🔐 Shop ${shop.username} enabled gateways:`, enabledGateways);
       } catch (error) {
         console.error('Error parsing payment gateways:', error);
-        enabledGateways = ['Plisio'];
+        enabledGateways = ['0001']; // Default to Plisio ID
       }
     } else {
-      enabledGateways = ['Plisio'];
+      enabledGateways = ['0001']; // Default to Plisio ID
       console.log(`🔐 Shop ${shop.username} using default gateways:`, enabledGateways);
     }
 
-    const gatewayDisplayName = this.getGatewayDisplayName(gatewayName);
+    // Get the gateway ID for the requested gateway
+    const requestedGatewayId = getGatewayIdByName(gatewayName) || gatewayName;
+    const requestedGatewayDisplayName = this.getGatewayDisplayName(gatewayName);
     
-    console.log(`🔐 Checking if "${gatewayDisplayName}" is in enabled gateways:`, enabledGateways);
+    console.log(`🔐 Checking gateway: ${gatewayName} -> ID: ${requestedGatewayId}, DisplayName: ${requestedGatewayDisplayName}`);
+    console.log(`🔐 Enabled gateways:`, enabledGateways);
 
-    if (!enabledGateways.includes(gatewayDisplayName)) {
-      console.error(`❌ Gateway "${gatewayDisplayName}" not allowed for shop ${shop.username}`);
+    // Check if gateway is enabled (support both IDs and display names in database)
+    const isEnabled = enabledGateways.some(enabledGateway => {
+      // Try exact match first
+      if (enabledGateway === requestedGatewayId || enabledGateway === gatewayName || enabledGateway === requestedGatewayDisplayName) {
+        return true;
+      }
+      
+      // Try converting enabled gateway to ID and compare
+      const enabledGatewayId = getGatewayIdByName(enabledGateway) || enabledGateway;
+      return enabledGatewayId === requestedGatewayId;
+    });
+
+    if (!isEnabled) {
+      console.error(`❌ Gateway "${requestedGatewayId}" not allowed for shop ${shop.username}`);
       console.error(`❌ Enabled gateways: ${enabledGateways.join(', ')}`);
       
+      // Convert all enabled gateways to IDs for consistent user-facing message
+      const enabledGatewayIds = enabledGateways.map(gateway => getGatewayIdByName(gateway) || gateway);
+      
       throw new Error(
-        `Gateway "${gatewayDisplayName}" is not enabled for your shop. ` +
-        `Enabled gateways: ${enabledGateways.join(', ')}. ` +
+        `Gateway "${requestedGatewayId}" is not enabled for your shop. ` +
+        `Enabled gateways: ${enabledGatewayIds.join(', ')}. ` +
         `Please contact support to enable additional gateways.`
       );
     }
 
-    console.log(`✅ Gateway "${gatewayDisplayName}" is allowed for shop ${shop.username}`);
+    console.log(`✅ Gateway "${requestedGatewayId}" is allowed for shop ${shop.username}`);
+  }
+
+  private convertGatewayNamesToIds(gatewayNames: string[]): string[] {
+    return gatewayNames.map(name => {
+      // Try to get ID from name mapping, fallback to original name if not found
+      return getGatewayIdByName(name) || name;
+    });
   }
 
   private getGatewayDisplayName(gatewayName: string): string {
@@ -767,7 +798,6 @@ export class PaymentService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
         const paymentUrl = `https://app.trapay.uk/payment/${payment.id}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
 
         console.log(`🔗 MasterCard payment URL: ${paymentUrl}`);
@@ -779,6 +809,84 @@ export class PaymentService {
           id: payment.id,
           gateway_payment_id: gatewayPaymentId,
           payment_url: paymentUrl,
+          status: payment.status,
+        };
+
+      } else if (gatewayName === 'amer') {
+        console.log(`💳 Creating Amer payment with gateway order_id: ${gatewayOrderId}`);
+        console.log(`💰 Amount: ${amount} ${currency || 'USD'} (Amer)`);
+
+        // Создаем платежную ссылку через AmerService
+        const amerPaymentData = await this.amerService.createPaymentLink({
+          paymentId: payment.id,
+          orderId: gatewayOrderId,
+          amount: parseFloat(amount.toString()),
+          currency: currency || 'USD',
+          country: 'US',
+          customer: customer_name || 'Customer',
+          usage: 'ONCE',
+          successUrl: `${process.env.FRONTEND_URL}/payment-success`,
+          failUrl: `${process.env.FRONTEND_URL}/payment-failure`
+        });
+
+        gatewayPaymentId = amerPaymentData.gateway_payment_id;
+        externalPaymentUrl = amerPaymentData.payment_url;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            paymentMethod: 'amer',
+          },
+        });
+
+        console.log(`🔗 Amer payment URL: ${externalPaymentUrl}`);
+
+        return {
+          id: payment.id,
+          gateway_payment_id: gatewayPaymentId,
+          payment_url: externalPaymentUrl,
+          status: payment.status,
+        };
+
+      } else if (gatewayName === 'myxspend') {
+        console.log(`🇲🇽 Creating MyXSpend payment with gateway order_id: ${gatewayOrderId}`);
+        console.log(`💰 Amount: ${amount} ${currency || 'MXN'} (MyXSpend)`);
+
+        // Создаем платежную ссылку через MyXSpendService
+        const myxspendPaymentData = await this.myxspendService.createPaymentLink({
+          paymentId: payment.id,
+          orderId: gatewayOrderId,
+          amount: parseFloat(amount.toString()),
+          currency: currency || 'MXN',
+          firstName: customer_name?.split(' ')[0] || 'Customer',
+          lastName: customer_name?.split(' ')[1] || '',
+          customerOrderId: gatewayOrderId,
+          email: customer_email || '',
+          phone: '',
+          successUrl: `${process.env.FRONTEND_URL}/payment-success`,
+          failureUrl: `${process.env.FRONTEND_URL}/payment-failure`
+        });
+
+        gatewayPaymentId = myxspendPaymentData.gateway_payment_id;
+        externalPaymentUrl = myxspendPaymentData.payment_url;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            paymentMethod: 'myxspend',
+          },
+        });
+
+        console.log(`🔗 MyXSpend payment URL: ${externalPaymentUrl}`);
+
+        return {
+          id: payment.id,
+          gateway_payment_id: gatewayPaymentId,
+          payment_url: externalPaymentUrl,
           status: payment.status,
         };
 
@@ -1213,6 +1321,7 @@ export class PaymentService {
           customerEmail: true,
           customerName: true,
           invoiceTotalSum: true,
+          amountAfterGatewayCommissionUSDT: true, // ✅ ДОБАВЛЕНО: Сумма после комиссии
           qrCode: true,
           qrUrl: true,
           txUrls: true,
@@ -1276,6 +1385,7 @@ export class PaymentService {
           customer_email: payment.customerEmail,
           customer_name: payment.customerName,
           invoice_total_sum: payment.invoiceTotalSum,
+          amount_after_commission_usdt: payment.amountAfterGatewayCommissionUSDT, // ✅ ДОБАВЛЕНО: Сумма после комиссии
           qr_code: payment.qrCode,
           qr_url: payment.qrUrl,
           tx_urls: txUrls,
@@ -1332,6 +1442,7 @@ export class PaymentService {
         customerEmail: true,
         customerName: true,
         invoiceTotalSum: true,
+        amountAfterGatewayCommissionUSDT: true, // ✅ ДОБАВЛЕНО: Сумма после комиссии
         qrCode: true,
         qrUrl: true,
         txUrls: true,
@@ -1374,6 +1485,7 @@ export class PaymentService {
       gateway: gatewayId, // ✅ ИЗМЕНЕНО: Возвращаем gateway ID
       title: `Order ID: ${payment.gatewayOrderId}`,
       amount: payment.amount,
+      amount_after_commission_usdt: payment.amountAfterGatewayCommissionUSDT,
       currency: payment.currency,
       source_currency: payment.sourceCurrency,
       usage: payment.usage,

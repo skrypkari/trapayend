@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Luhn Algorithm Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .valid { background-color: #d4edda; border-color: #c3e6cb; }
+        .invalid { background-color: #f8d7da; border-color: #f5c6cb; }
+        input { padding: 10px; font-size: 16px; width: 300px; margin: 10px 0; }
+        .result { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Luhn Algorithm Card Validation Test</h1>
+    
+    <div>
+        <input type="text" id="cardTest" placeholder="Enter card number" maxlength="19">
+        <div id="testResult" class="result"></div>
+    </div>
+
+    <h2>Test Cases:</h2>
+    
+    <div class="test valid">
+        <strong>Valid Test Cards (should pass Luhn):</strong><br>
+        4532015112830366 (Visa)<br>
+        5555555555554444 (MasterCard)<br>
+        378282246310005 (Amex)<br>
+        6011111111111117 (Discover)
+    </div>
+    
+    <div class="test invalid">
+        <strong>Invalid Test Cards (should fail Luhn):</strong><br>
+        4532015112830367 (Visa - wrong checksum)<br>
+        5555555555554445 (MasterCard - wrong checksum)<br>
+        1234567890123456 (Random number)
+    </div>
+
+    <script>
+        // Luhn algorithm implementation
+        function validateCardNumberLuhn(cardNumber) {
+            const cleanNumber = cardNumber.replace(/\D/g, '');
+            
+            if (cleanNumber.length < 13 || cleanNumber.length > 19) {
+                return false;
+            }
+
+            let sum = 0;
+            let isEven = false;
+
+            for (let i = cleanNumber.length - 1; i >= 0; i--) {
+                let digit = parseInt(cleanNumber.charAt(i));
+
+                if (isEven) {
+                    digit *= 2;
+                    if (digit > 9) {
+                        digit = digit - 9;
+                    }
+                }
+
+                sum += digit;
+                isEven = !isEven;
+            }
+
+            return (sum % 10) === 0;
+        }
+
+        function getCardType(cardNumber) {
+            const cleanNumber = cardNumber.replace(/\D/g, '');
+            
+            if (/^4/.test(cleanNumber)) {
+                return 'Visa';
+            } else if (/^5[1-5]/.test(cleanNumber) || /^2[2-7]/.test(cleanNumber)) {
+                return 'MasterCard';
+            } else if (/^3[47]/.test(cleanNumber)) {
+                return 'Amex';
+            } else if (/^6(?:011|5)/.test(cleanNumber)) {
+                return 'Discover';
+            }
+            
+            return 'Unknown';
+        }
+
+        function formatCardNumber(value) {
+            const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+            const matches = v.match(/\d{4,16}/g);
+            const match = matches && matches[0] || '';
+            const parts = [];
+            for (let i = 0, len = match.length; i < len; i += 4) {
+                parts.push(match.substring(i, i + 4));
+            }
+            if (parts.length) {
+                return parts.join(' ');
+            } else {
+                return v;
+            }
+        }
+
+        document.getElementById('cardTest').addEventListener('input', function(e) {
+            e.target.value = formatCardNumber(e.target.value);
+            
+            const isValid = validateCardNumberLuhn(e.target.value);
+            const cardType = getCardType(e.target.value);
+            const cleanNumber = e.target.value.replace(/\D/g, '');
+            
+            const resultDiv = document.getElementById('testResult');
+            
+            if (cleanNumber.length === 0) {
+                resultDiv.textContent = '';
+                return;
+            }
+            
+            if (cleanNumber.length >= 13) {
+                if (isValid) {
+                    resultDiv.textContent = `✅ VALID ${cardType} card`;
+                    resultDiv.style.color = 'green';
+                } else {
+                    resultDiv.textContent = `❌ INVALID card (failed Luhn check)`;
+                    resultDiv.style.color = 'red';
+                }
+            } else {
+                resultDiv.textContent = `Type: ${cardType}, Length: ${cleanNumber.length} (need 13+ digits)`;
+                resultDiv.style.color = 'orange';
+            }
+        });
+
+        // Test the known cards
+        console.log('Testing known valid cards:');
+        console.log('4532015112830366:', validateCardNumberLuhn('4532015112830366'));
+        console.log('5555555555554444:', validateCardNumberLuhn('5555555555554444'));
+        console.log('378282246310005:', validateCardNumberLuhn('378282246310005'));
+        console.log('6011111111111117:', validateCardNumberLuhn('6011111111111117'));
+        
+        console.log('Testing known invalid cards:');
+        console.log('4532015112830367:', validateCardNumberLuhn('4532015112830367'));
+        console.log('5555555555554445:', validateCardNumberLuhn('5555555555554445'));
+        console.log('1234567890123456:', validateCardNumberLuhn('1234567890123456'));
+    </script>
+</body>
+</html>

@@ -15,6 +15,8 @@ import { NodaService } from './gateways/nodaService';
 import { CoinToPayService } from './gateways/coinToPayService';
 import { CoinToPay2Service } from './gateways/coinToPay2Service';
 import { KlymeService } from './gateways/klymeService';
+import { AmerService } from './gateways/amerService';
+import { MyXSpendService } from './gateways/myxspendService';
 import { coinToPayStatusService } from './coinToPayStatusService';
 import { getGatewayNameById, isValidGatewayId, getKlymeRegionFromGatewayName } from '../types/gateway';
 import { currencyService } from './currencyService';
@@ -26,6 +28,8 @@ export class PaymentLinkService {
   private coinToPayService: CoinToPayService;
   private coinToPay2Service: CoinToPay2Service;
   private klymeService: KlymeService;
+  private amerService: AmerService;
+  private myxspendService: MyXSpendService;
 
   constructor() {
     this.plisioService = new PlisioService();
@@ -34,6 +38,8 @@ export class PaymentLinkService {
     this.coinToPayService = new CoinToPayService();
     this.coinToPay2Service = new CoinToPay2Service();
     this.klymeService = new KlymeService();
+    this.amerService = new AmerService();
+    this.myxspendService = new MyXSpendService();
   }
 
   private generateGatewayOrderId(): string {
@@ -294,6 +300,7 @@ export class PaymentLinkService {
       'klyme_gb': 'KLYME GB',
       'klyme_de': 'KLYME DE',
       'mastercard': 'MasterCard',
+      'amer': 'Amer',
     };
 
     return gatewayDisplayNames[gatewayName] || gatewayName;
@@ -301,7 +308,7 @@ export class PaymentLinkService {
 
   async createPaymentLink(shopId: string, linkData: CreatePaymentLinkRequest): Promise<PaymentLinkResponse> {
     if (!isValidGatewayId(linkData.gateway)) {
-      throw new Error(`Invalid gateway ID: ${linkData.gateway}. Valid IDs are: 0001 (Plisio), 0010 (Rapyd), 0100 (CoinToPay), 1000 (Noda), 1001 (KLYME EU), 1010 (KLYME GB), 1100 (KLYME DE)`);
+      throw new Error(`Invalid gateway ID: ${linkData.gateway}. Valid IDs are: 0001 (Plisio), 0010 (Rapyd), 0100 (CoinToPay), 1000 (Noda), 1001 (KLYME EU), 1010 (KLYME GB), 1100 (KLYME DE), 1111 (MasterCard), 1110 (Amer)`);
     }
 
     const gatewayName = getGatewayNameById(linkData.gateway);
@@ -714,7 +721,7 @@ export class PaymentLinkService {
         successUrl: 'temp',
         failUrl: 'temp',
         pendingUrl: 'temp',
-        whiteUrl: 'temp', // ✅ НОВОЕ: Временное значение для whiteUrl
+        whiteUrl: 'temp',
         status: 'PENDING',
         orderId: null,
         gatewayOrderId: gatewayOrderId,
@@ -840,8 +847,7 @@ export class PaymentLinkService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = externalPaymentUrl;
         console.log(`🔗 Rapyd payment URL: ${paymentUrl}`);
 
         return {
@@ -875,8 +881,7 @@ export class PaymentLinkService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = externalPaymentUrl;
         console.log(`🔗 Noda payment URL: ${paymentUrl}`);
 
         return {
@@ -911,8 +916,7 @@ export class PaymentLinkService {
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = externalPaymentUrl;
         console.log(`🔗 CoinToPay payment URL: ${paymentUrl}`);
 
         return {
@@ -947,8 +951,7 @@ export class PaymentLinkService {
           coinToPayStatusService.schedulePaymentChecks(payment.id, gatewayPaymentId);
         }
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = externalPaymentUrl;
         console.log(`🔗 CoinToPay2 (Open Banking 2) payment URL: ${paymentUrl}`);
 
         return {
@@ -987,8 +990,7 @@ export class PaymentLinkService {
           },
         });
 
-        // ✅ ОБНОВЛЕНО: Везде возвращаем app.trapay.uk
-        const paymentUrl = `https://app.trapay.uk/payment/${payment.id}`;
+        const paymentUrl = externalPaymentUrl;
         console.log(`✅ KLYME ${region} payment created successfully with gateway order_id: ${gatewayOrderId}`);
         console.log(`🔗 KLYME ${region} payment URL: ${paymentUrl}`);
 
@@ -1059,6 +1061,79 @@ export class PaymentLinkService {
         return {
           paymentId: payment.id,
           paymentUrl: paymentUrl,
+          expiresAt: payment.expiresAt || undefined,
+        };
+
+      } else if (link.gateway === 'amer') {
+        console.log(`💳 Creating Amer payment from link with gateway order_id: ${gatewayOrderId}`);
+        console.log(`💰 Amount: ${paymentAmount} ${link.currency} (Amer)`);
+
+        // For Amer, we create a payment link through payment.php
+        const urlParams = new URLSearchParams();
+        urlParams.append('payment_id', payment.id);
+        urlParams.append('amount', paymentAmount.toString());
+        urlParams.append('currency', link.currency);
+        if (customerEmail) {
+          urlParams.append('email', customerEmail);
+        }
+        if (customerName) {
+          urlParams.append('name', customerName);
+        }
+        
+        const amerFormUrl = `https://api2.trapay.uk/payment.php?${urlParams.toString()}`;
+        
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: amerFormUrl,
+            gatewayPaymentId: `amer_${gatewayOrderId}`,
+            paymentMethod: 'amer',
+          },
+        });
+
+        console.log(`🔗 Amer payment URL: ${amerFormUrl}`);
+
+        return {
+          paymentId: payment.id,
+          paymentUrl: amerFormUrl,
+          expiresAt: payment.expiresAt || undefined,
+        };
+
+      } else if (link.gateway === 'myxspend') {
+        console.log(`💳 Creating MyXSpend payment from link with gateway order_id: ${gatewayOrderId}`);
+        console.log(`💰 Amount: ${paymentAmount} ${link.currency} (MyXSpend)`);
+
+        const myxspendResult = await this.myxspendService.createPaymentLink({
+          paymentId: payment.id,
+          orderId: gatewayOrderId,
+          firstName: customerName?.split(' ')[0] || 'Customer',
+          lastName: customerName?.split(' ').slice(1).join(' ') || '',
+          customerOrderId: gatewayOrderId,
+          email: customerEmail || '',
+          phone: '',
+          amount: paymentAmount,
+          currency: link.currency,
+          successUrl: finalSuccessUrl,
+          failureUrl: finalFailUrl,
+        });
+
+        gatewayPaymentId = myxspendResult.paymentLinkCode || myxspendResult.gateway_payment_id;
+        externalPaymentUrl = myxspendResult.payment_url;
+
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            externalPaymentUrl: externalPaymentUrl,
+            gatewayPaymentId: gatewayPaymentId,
+            paymentMethod: 'myxspend',
+          },
+        });
+
+        console.log(`🔗 MyXSpend payment URL: ${externalPaymentUrl}`);
+
+        return {
+          paymentId: payment.id,
+          paymentUrl: externalPaymentUrl!,
           expiresAt: payment.expiresAt || undefined,
         };
 

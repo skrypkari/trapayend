@@ -23,7 +23,7 @@ export interface MasterCardPaymentRequest {
   };
   browser: {
     accept_header: string;
-    color_depth: number;
+    color_depth?: number;
     ip: string;
     language: string;
     screen_height: number;

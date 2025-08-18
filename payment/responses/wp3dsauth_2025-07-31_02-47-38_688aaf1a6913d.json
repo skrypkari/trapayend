@@ -1,0 +1,28 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708012124891",
+        "cvv": "263",
+        "expmo": "03",
+        "expyr": "2030",
+        "cardholder": "John Moonly",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.89 (0.2 + 5.10%)",
+        "pool": "6,167.93 available",
+        "undefined": "Buy",
+        "colref": "0_cd627bff-0a49-44c9-9c32-83f2aff20d3f",
+        "refid": "CT4KKM685H56Z810"
+    },
+    "response": "{\"reference\":\"6RxX23TRan87NmrirvK0\",\"url\":\"https:\/\/centinelapi.cardinalcommerce.com\/V2\/Cruise\/StepUp\",\"jwt\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MWE1ZmU0Yi00ZTg5LTQ0ZTYtOTgwNC1kMjc5NThiZjVhNDkiLCJpYXQiOjE3NTM5MTkyNTgsImV4cCI6MTc1MzkxOTg1OCwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIiwiUmV0dXJuVXJsIjoiaHR0cHM6Ly9zZWN1cmVwYXlhcGkuY29tOjIwODcvd3AzZHNjaGFsbGVuZ2UiLCJQYXlsb2FkIjoie1wiUGF5bG9hZFwiOlwiZXlKdFpYTnpZV2RsVkhsd1pTSTZJa05TWlhFaUxDSnRaWE56WVdkbFZtVnljMmx2YmlJNklqSXVNaTR3SWl3aWRHaHlaV1ZFVTFObGNuWmxjbFJ5WVc1elNVUWlPaUl5WW1ObU5EWTJOQzB6TnpNMExUUTNZMkV0WWpnME9DMWtORGsxTkRKa1ptUTVZbUVpTENKaFkzTlVjbUZ1YzBsRUlqb2lNR1JrWW1GaE5XRXRaR1kyTkMwMFlURTVMV0psTW1ZdE5ETXlabUV5TURRMFltUTFJaXdpWTJoaGJHeGxibWRsVjJsdVpHOTNVMmw2WlNJNklqQXlJbjBcIixcIkFDU1VybFwiOlwiaHR0cHM6XFwvXFwvYWNzLWNoYWxsZW5nZS5hcGF0YS5pb1xcL3YxXFwvQnJvd3NlckNSZXFcIixcIlRyYW5zYWN0aW9uSWRcIjpcIjZSeFgyM1RSYW44N05tcmlydkswXCJ9IiwiT2JqZWN0aWZ5UGF5bG9hZCI6ZmFsc2V9.0s2QtSBkte1GepYOKozei_BZA2yr-pRC63bhMR6lyTQ\",\"payload\":\"eyJtZXNzYWdlVHlwZSI6IkNSZXEiLCJtZXNzYWdlVmVyc2lvbiI6IjIuMi4wIiwidGhyZWVEU1NlcnZlclRyYW5zSUQiOiIyYmNmNDY2NC0zNzM0LTQ3Y2EtYjg0OC1kNDk1NDJkZmQ5YmEiLCJhY3NUcmFuc0lEIjoiMGRkYmFhNWEtZGY2NC00YTE5LWJlMmYtNDMyZmEyMDQ0YmQ1IiwiY2hhbGxlbmdlV2luZG93U2l6ZSI6IjAyIn0\",\"md\":\"\"}",
+    "http_code": 200,
+    "error": "",
+    "timestamp": "2025-07-31 02:47:38"
+}

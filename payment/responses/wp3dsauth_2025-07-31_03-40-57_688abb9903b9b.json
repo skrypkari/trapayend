@@ -1,0 +1,28 @@
+{
+    "request": {
+        "customer": "8MKTMRR4",
+        "co": "al",
+        "product": "100",
+        "productdescription": "AI usage",
+        "cc": "5557708011629668",
+        "cvv": "036",
+        "expmo": "10",
+        "expyr": "2029",
+        "cardholder": "Alliott Merjonn",
+        "address": "",
+        "city": "",
+        "zip": "",
+        "country": "PL",
+        "amount": "2",
+        "currency": "EUR",
+        "usdc": "1.86 (0.2 + 5.10%)",
+        "pool": "6,119.07 available",
+        "undefined": "Buy",
+        "colref": "0_981485f5-448f-4cdd-97ce-d4078e732511",
+        "refid": "3A4HYZPP624CH816"
+    },
+    "response": "{\"reference\":\"bZLbkto5YMlyqrxdqCo0\",\"url\":\"https:\/\/centinelapi.cardinalcommerce.com\/V2\/Cruise\/StepUp\",\"jwt\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJkZTI2MjNjNi00NDU0LTQxZDItODIwOS03ZjI1MjFiYzAyNDMiLCJpYXQiOjE3NTM5MjI0NTYsImV4cCI6MTc1MzkyMzA1NiwiaXNzIjoiNjVlYWRmODI2MjQ1YTA0ZmZiNWE3MWYwIiwiT3JnVW5pdElkIjoiNjVlYWRmODFlMjA3NTAyMjU4MGMzMGMyIiwiUmV0dXJuVXJsIjoiaHR0cHM6Ly9zZWN1cmVwYXlhcGkuY29tOjIwODcvd3AzZHNjaGFsbGVuZ2UiLCJQYXlsb2FkIjoie1wiUGF5bG9hZFwiOlwiZXlKdFpYTnpZV2RsVkhsd1pTSTZJa05TWlhFaUxDSnRaWE56WVdkbFZtVnljMmx2YmlJNklqSXVNaTR3SWl3aWRHaHlaV1ZFVTFObGNuWmxjbFJ5WVc1elNVUWlPaUkwWXpFMFptVTVNQzB4T0RSa0xUUmtaR0l0WVRJNVpTMHhNamxoTWpZNVpERm1ORGdpTENKaFkzTlVjbUZ1YzBsRUlqb2lPV0ptT0RZNVpqQXRZakF4WXkwME5qRm1MVGd5WXpndE1tRTFNMlExTm1JellXTXhJaXdpWTJoaGJHeGxibWRsVjJsdVpHOTNVMmw2WlNJNklqQXlJbjBcIixcIkFDU1VybFwiOlwiaHR0cHM6XFwvXFwvYWNzLWNoYWxsZW5nZS5hcGF0YS5pb1xcL3YxXFwvQnJvd3NlckNSZXFcIixcIlRyYW5zYWN0aW9uSWRcIjpcImJaTGJrdG81WU1seXFyeGRxQ28wXCJ9IiwiT2JqZWN0aWZ5UGF5bG9hZCI6ZmFsc2V9.QmN0fSgJnlkd3H7y2vEBzK7RkBAIWxO6NbNSsARre_s\",\"payload\":\"eyJtZXNzYWdlVHlwZSI6IkNSZXEiLCJtZXNzYWdlVmVyc2lvbiI6IjIuMi4wIiwidGhyZWVEU1NlcnZlclRyYW5zSUQiOiI0YzE0ZmU5MC0xODRkLTRkZGItYTI5ZS0xMjlhMjY5ZDFmNDgiLCJhY3NUcmFuc0lEIjoiOWJmODY5ZjAtYjAxYy00NjFmLTgyYzgtMmE1M2Q1NmIzYWMxIiwiY2hhbGxlbmdlV2luZG93U2l6ZSI6IjAyIn0\",\"md\":\"\"}",
+    "http_code": 200,
+    "error": "",
+    "timestamp": "2025-07-31 03:40:57"
+}

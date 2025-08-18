@@ -13,6 +13,7 @@ import currencyRoutes from './currency';
 import gatewayRoutes from './gateways';
 import adminRoutes from './admin';
 import testGatewayRoutes from './testGateway';
+import internalRoutes from './internal';
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.use('/telegram', telegramRoutes);
 router.use('/currency', currencyRoutes);
 router.use('/gateways', gatewayRoutes);
 router.use('/test-gateway', testGatewayRoutes);
+router.use('/internal', internalRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
